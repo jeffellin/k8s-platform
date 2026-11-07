@@ -2,3 +2,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - https://projectcontour.io/quickstart/contour.yaml
+patches:
+  # Envoy uses hostPorts 80/443; clusters enforcing PodSecurity baseline (Talos default) reject it
+  - target: {kind: Namespace, name: projectcontour}
+    patch: |-
+      - op: add
+        path: /metadata/labels
+        value:
+          pod-security.kubernetes.io/enforce: privileged
