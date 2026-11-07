@@ -11,7 +11,7 @@ spec:
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   - name: metallb-config
     dependsOn:
@@ -19,7 +19,7 @@ spec:
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
       metal_lb_address_pool: 192.168.1.156-192.168.1.160
   - name: local-path-provisioner
@@ -27,14 +27,14 @@ spec:
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   - name: metrics-server
     dependsOn: []
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   - name: contour
     dependsOn:
@@ -42,7 +42,7 @@ spec:
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   - name: cert-manager
     dependsOn:
@@ -50,7 +50,7 @@ spec:
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   - name: cluster-issuers
     dependsOn:
@@ -58,7 +58,7 @@ spec:
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   - name: external-dns
     dependsOn:
@@ -66,7 +66,7 @@ spec:
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
-      zone_id: Z01234567EXAMPLE
+      zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   resourcesTemplate: |
     - apiVersion: kustomize.toolkit.fluxcd.io/v1
