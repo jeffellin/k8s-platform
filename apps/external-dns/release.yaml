@@ -17,6 +17,7 @@ spec:
       sourceRef: {kind: HelmRepository, name: external-dns}
   values:
     provider: {name: aws}
+    policy: upsert-only      # chart schema requires it; never deletes records
     sources: [service, ingress, contour-httpproxy]
     txtOwnerId: ${external_dns_txt_id}
     extraArgs:
