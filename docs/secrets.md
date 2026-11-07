@@ -1,26 +1,22 @@
 # Secrets (SOPS + age)
 
-Two kinds of age keys:
-
-| Key | Private key location | Public key goes in | Purpose |
+| Key | Private key | Public key | Purpose |
 |---|---|---|---|
-| **admin** (one, yours) | `~/.config/sops/age/keys.txt` (sops default; back up in 1Password) | every rule in `.sops.yaml` | edit/rotate any secret locally |
-| **cluster** (one per cluster) | `~/.config/sops/age/<cluster>.agekey` + secret `sops-age` in `flux-system` | that cluster's rule only | Flux decrypts that cluster's secrets |
+| **admin** (yours) | `~/.config/sops/age/keys.txt` (back up in 1Password) | `keys/admin.pub` | edit/rotate any secret |
+| **cluster** (one each) | `~/.config/sops/age/<cluster>.agekey` + secret `sops-age` in `flux-system` | `keys/<cluster>.pub` | Flux decrypts that cluster's secrets |
 
-Every secret file is encrypted to admin + its cluster, so a cluster can never decrypt another cluster's secrets.
+Each secret is encrypted to admin + its cluster only. `.sops.yaml` is GENERATED from `keys/*.pub` by `hack/render.py`.
 
-## One-time
-1. `age-keygen -o ~/.config/sops/age/keys.txt` -> admin public key into `.sops.yaml`.
-2. `bootstrap/bootstrap.sh <cluster>` creates `<cluster>.agekey` if missing (prints its public key) -> put in `.sops.yaml`.
+## New cluster: one pass, in this order
+1. Add the cluster + its apps to `clusters.yaml` (all apps, including those needing secrets).
+2. `hack/new-cluster.sh <cluster>` -- creates admin/cluster age keys (if missing), writes `keys/*.pub`, and drops
+   `clusters/<cluster>/secrets/<app>/*.example.yaml` skeletons for every app that declares `secrets:` in its `meta.yaml`.
+3. For each skeleton: `cp x.example.yaml x.sops.yaml`, fill in, `sops --encrypt --in-place x.sops.yaml`.
+4. `hack/render.py` -- fails (listing what's wrong) if a declared secret is missing or not encrypted; otherwise
+   writes the ResourceSets, secrets kustomizations/namespaces and `.sops.yaml`.
+5. Commit + push, then `KUBECONFIG=... bootstrap/bootstrap.sh <cluster>`.
 
-## Add a secret
-1. `cp aws-credentials.example.yaml aws-credentials.sops.yaml`, fill in.
-2. `sops --encrypt --in-place aws-credentials.sops.yaml` (edit later with `sops <file>`).
-3. List it in that dir's `kustomization.yaml`, enable the app in `clusters.yaml`, `hack/render.py`, commit.
-
-Name encrypted files `*.sops.yaml` (matches `.sops.yaml` rules); `*.example.yaml` are never loaded.
-Rotating recipients: edit `.sops.yaml`, then `sops updatekeys <file>` per file.
-
-Apps with `secrets: true` in `apps/<app>/meta.yaml` get an `<app>-secrets` Flux Kustomization
-(decrypts `clusters/<cluster>/secrets/<app>/`, creates the namespace) that the app depends on.
+The cluster does not need to exist for steps 1-5a: keys are independent of it, so there is no enable-later second run.
+An app whose `<app>-secrets` can't decrypt/apply stays not-ready and the app waits on it (`dependsOn`).
+Rotating recipients: re-run `hack/render.py`, then `sops updatekeys <file>` per file.
 Private git repo: create a deploy key secret `flux-system` and set `pullSecret` in bootstrap/fluxinstance.yaml.tmpl.

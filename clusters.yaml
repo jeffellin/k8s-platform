@@ -22,8 +22,7 @@ clusters:
           metal_lb_address_pool: 192.168.1.156-192.168.1.160
       - name: local-path-provisioner
       - name: metrics-server
-      # enable once the age key + secrets are in place (see docs/secrets.md):
-      # - name: cert-manager
-      # - name: cluster-issuers
-      # - name: external-dns
-      # - name: contour
+      - name: contour
+      - name: cert-manager        # needs secrets/cert-manager/aws-credentials.sops.yaml
+      - name: cluster-issuers
+      - name: external-dns        # needs secrets/external-dns/aws-credentials.sops.yaml

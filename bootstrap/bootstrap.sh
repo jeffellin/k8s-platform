@@ -15,11 +15,7 @@ read -r REPO_URL BRANCH < <(python3 -I -c "import yaml;r=yaml.safe_load(open('$R
 echo "cluster=$CLUSTER context=$(kubectl config current-context) repo=$REPO_URL"
 [ "$DRY" = "--dry-run" ] && K="kubectl --dry-run=client" || K="kubectl"
 
-if [ ! -f "$AGE_KEY" ]; then
-  command -v age-keygen >/dev/null || { echo "install age (age-keygen) first"; exit 1; }
-  mkdir -p "$(dirname "$AGE_KEY")"; (umask 077; age-keygen -o "$AGE_KEY")
-  echo ">> NEW cluster age key. Add the public key above as the 2nd recipient of the clusters/$CLUSTER rule in .sops.yaml (admin key stays 1st), then: sops updatekeys <each secret>"
-fi
+[ -f "$AGE_KEY" ] || { echo "missing $AGE_KEY -- run hack/new-cluster.sh $CLUSTER first (keys must exist before secrets are encrypted)"; exit 1; }
 
 URL="https://github.com/controlplaneio-fluxcd/flux-operator/releases/${OP_VERSION}/download/install.yaml"
 [ "$OP_VERSION" = latest ] || URL="https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/${OP_VERSION}/install.yaml"

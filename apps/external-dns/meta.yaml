@@ -1,1 +1,2 @@
-secrets: true
+namespace: external-dns
+secrets: [aws-credentials.sops.yaml]

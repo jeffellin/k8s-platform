@@ -1,1 +1,2 @@
-secrets: true          # needs clusters/<name>/secrets/cert-manager (SOPS)
+namespace: cert-manager
+secrets: [aws-credentials.sops.yaml]   # must exist, SOPS-encrypted, in clusters/<name>/secrets/cert-manager/
