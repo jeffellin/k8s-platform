@@ -1,0 +1,5 @@
+# One age recipient per cluster. Get the public key from the cluster's .agekey (age-keygen prints it).
+creation_rules:
+  - path_regex: clusters/talos-test/secrets/.*\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age1REPLACE_WITH_TALOS_TEST_PUBLIC_KEY

@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nfs-subdir
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: nfs-subdir-external-provisioner
+  namespace: nfs-subdir
+spec:
+  interval: 1h
+  url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nfs-subdir-external-provisioner
+  namespace: nfs-subdir
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: nfs-subdir-external-provisioner
+      version: '4.x'  # You can specify a specific version or use 4.x for latest 4.x.x
+      sourceRef:
+        kind: HelmRepository
+        name: nfs-subdir-external-provisioner
+        namespace: nfs-subdir
+      interval: 12h
+  values:
+    nfs:
+      server: 192.168.1.6
+      path: /volume1/nfs
+    storageClass:
+      create: true
+      defaultClass: false  # Set to true if you want this as the default StorageClass
+      name: nfs-client
+      accessModes: ReadWriteMany
+      reclaimPolicy: Retain  # or Delete, depending on your needs
+      archiveOnDelete: true  # Creates an archived folder when PVC is deleted

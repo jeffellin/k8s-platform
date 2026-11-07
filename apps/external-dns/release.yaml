@@ -1,0 +1,30 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata: {name: external-dns, namespace: external-dns}
+spec:
+  interval: 1h
+  url: https://kubernetes-sigs.github.io/external-dns
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: {name: external-dns, namespace: external-dns}
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: external-dns
+      version: 1.x
+      sourceRef: {kind: HelmRepository, name: external-dns}
+  values:
+    provider: {name: aws}
+    sources: [service, ingress, contour-httpproxy]
+    txtOwnerId: ${external_dns_txt_id}
+    extraArgs:
+      - --zone-id-filter=${zone_id}
+    env:
+      - name: AWS_REGION
+        value: ${aws_region}
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom: {secretKeyRef: {name: aws-credentials, key: access-key-id}}
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom: {secretKeyRef: {name: aws-credentials, key: secret-access-key}}

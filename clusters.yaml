@@ -1,0 +1,29 @@
+# Single source of truth: which apps run on which cluster, and their options.
+# Edit this, then run `hack/render.py` and commit the generated clusters/<name>/ files.
+# Each app's name matches a directory under apps/. Ordering comes from apps/<app>/meta.yaml.
+repo:
+  url: https://github.com/jeffellin/k8s-platform   # TODO confirm host / visibility
+  branch: main
+
+defaults:
+  # substituted into every app as ${var}
+  cert_email: jeff@ellin.net
+  aws_region: us-east-1
+
+clusters:
+  talos-test:                       # single-node Talos VM 155 (192.168.1.155)
+    vars:
+      zone_id: Z01234567EXAMPLE     # TODO real Route53 zone id
+      external_dns_txt_id: talos-test
+    apps:
+      - name: metallb
+      - name: metallb-config
+        options:
+          metal_lb_address_pool: 192.168.1.156-192.168.1.160
+      - name: local-path-provisioner
+      - name: metrics-server
+      # enable once the age key + secrets are in place (see docs/secrets.md):
+      # - name: cert-manager
+      # - name: cluster-issuers
+      # - name: external-dns
+      # - name: contour

@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Talos: storage lives on the `local-path-provisioner` user volume -> /var/mnt/local-path-provisioner
+resources:
+  - https://github.com/rancher/local-path-provisioner/deploy?ref=v0.0.31
+patches:
+  - target: {kind: ConfigMap, name: local-path-config}
+    patch: |-
+      - op: replace
+        path: /data/config.json
+        value: |-
+          {"nodePathMap":[{"node":"DEFAULT_PATH_FOR_NON_LISTED_NODES","paths":["/var/mnt/local-path-provisioner"]}]}
+  - target: {kind: Namespace, name: local-path-storage}
+    patch: |-
+      - op: add
+        path: /metadata/labels
+        value:
+          pod-security.kubernetes.io/enforce: privileged
