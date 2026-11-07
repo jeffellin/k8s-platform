@@ -17,36 +17,36 @@ def meta(app):
     return yaml.safe_load(p.read_text()) or {}
 
 APP_TMPL = """\
-- apiVersion: kustomize.toolkit.fluxcd.io/v1
-  kind: Kustomization
-  metadata:
-    name: << inputs.name >>
-    namespace: flux-system
-  spec:
-    interval: 10m
-    retryInterval: 1m
-    timeout: 10m
-    prune: true
-    wait: true
-    path: ./apps/<< inputs.name >>
-    sourceRef: {kind: GitRepository, name: flux-system}
-    dependsOn: << inputs.dependsOn | toJson >>
-    postBuild:
-      substitute: << inputs.vars | toJson >>
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: << inputs.name >>
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  prune: true
+  wait: true
+  path: ./apps/<< inputs.name >>
+  sourceRef: {kind: GitRepository, name: flux-system}
+  dependsOn: << inputs.dependsOn | toJson >>
+  postBuild:
+    substitute: << inputs.vars | toJson >>
 """
 SEC_TMPL = """\
-- apiVersion: kustomize.toolkit.fluxcd.io/v1
-  kind: Kustomization
-  metadata:
-    name: << inputs.name >>-secrets
-    namespace: flux-system
-  spec:
-    interval: 10m
-    prune: true
-    wait: true
-    path: ./clusters/<< inputs.cluster >>/secrets/<< inputs.name >>
-    sourceRef: {kind: GitRepository, name: flux-system}
-    decryption: {provider: sops, secretRef: {name: sops-age}}
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: << inputs.name >>-secrets
+  namespace: flux-system
+spec:
+  interval: 10m
+  prune: true
+  wait: true
+  path: ./clusters/<< inputs.cluster >>/secrets/<< inputs.name >>
+  sourceRef: {kind: GitRepository, name: flux-system}
+  decryption: {provider: sops, secretRef: {name: sops-age}}
 """
 
 def resourceset(name, inputs, tmpl):

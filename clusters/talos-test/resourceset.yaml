@@ -69,22 +69,22 @@ spec:
       zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
   resourcesTemplate: |
-    - apiVersion: kustomize.toolkit.fluxcd.io/v1
-      kind: Kustomization
-      metadata:
-        name: << inputs.name >>
-        namespace: flux-system
-      spec:
-        interval: 10m
-        retryInterval: 1m
-        timeout: 10m
-        prune: true
-        wait: true
-        path: ./apps/<< inputs.name >>
-        sourceRef: {kind: GitRepository, name: flux-system}
-        dependsOn: << inputs.dependsOn | toJson >>
-        postBuild:
-          substitute: << inputs.vars | toJson >>
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: << inputs.name >>
+      namespace: flux-system
+    spec:
+      interval: 10m
+      retryInterval: 1m
+      timeout: 10m
+      prune: true
+      wait: true
+      path: ./apps/<< inputs.name >>
+      sourceRef: {kind: GitRepository, name: flux-system}
+      dependsOn: << inputs.dependsOn | toJson >>
+      postBuild:
+        substitute: << inputs.vars | toJson >>
 ---
 apiVersion: fluxcd.controlplane.io/v1
 kind: ResourceSet
@@ -98,15 +98,15 @@ spec:
   - name: external-dns
     cluster: talos-test
   resourcesTemplate: |
-    - apiVersion: kustomize.toolkit.fluxcd.io/v1
-      kind: Kustomization
-      metadata:
-        name: << inputs.name >>-secrets
-        namespace: flux-system
-      spec:
-        interval: 10m
-        prune: true
-        wait: true
-        path: ./clusters/<< inputs.cluster >>/secrets/<< inputs.name >>
-        sourceRef: {kind: GitRepository, name: flux-system}
-        decryption: {provider: sops, secretRef: {name: sops-age}}
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: << inputs.name >>-secrets
+      namespace: flux-system
+    spec:
+      interval: 10m
+      prune: true
+      wait: true
+      path: ./clusters/<< inputs.cluster >>/secrets/<< inputs.name >>
+      sourceRef: {kind: GitRepository, name: flux-system}
+      decryption: {provider: sops, secretRef: {name: sops-age}}
