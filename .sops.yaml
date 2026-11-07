@@ -1,5 +1,10 @@
-# One age recipient per cluster. Get the public key from the cluster's .agekey (age-keygen prints it).
+# Every secrets file is encrypted to TWO recipients:
+#   1. admin   -- your personal key (~/.config/sops/age/keys.txt, backed up in 1Password); lets you edit any secret
+#   2. cluster -- that cluster's key (~/.config/sops/age/<cluster>.agekey, also loaded as secret sops-age)
+# Public keys only here. Add a block per cluster; `sops updatekeys <file>` after changing recipients.
 creation_rules:
-  - path_regex: clusters/talos-test/secrets/.*\.yaml$
+  - path_regex: clusters/talos-test/secrets/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
-    age: age1REPLACE_WITH_TALOS_TEST_PUBLIC_KEY
+    age: >-
+      age1ADMIN_PUBLIC_KEY_REPLACE_ME,
+      age1TALOS_TEST_PUBLIC_KEY_REPLACE_ME

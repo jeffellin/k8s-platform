@@ -18,7 +18,7 @@ echo "cluster=$CLUSTER context=$(kubectl config current-context) repo=$REPO_URL"
 if [ ! -f "$AGE_KEY" ]; then
   command -v age-keygen >/dev/null || { echo "install age (age-keygen) first"; exit 1; }
   mkdir -p "$(dirname "$AGE_KEY")"; (umask 077; age-keygen -o "$AGE_KEY")
-  echo ">> NEW age key. Put the public key above into .sops.yaml for clusters/$CLUSTER/secrets, then re-encrypt secrets."
+  echo ">> NEW cluster age key. Add the public key above as the 2nd recipient of the clusters/$CLUSTER rule in .sops.yaml (admin key stays 1st), then: sops updatekeys <each secret>"
 fi
 
 URL="https://github.com/controlplaneio-fluxcd/flux-operator/releases/${OP_VERSION}/download/install.yaml"
