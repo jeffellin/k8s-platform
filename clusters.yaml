@@ -2,7 +2,7 @@
 # Edit this, then run `hack/render.py` and commit the generated clusters/<name>/ files.
 # Each app's name matches a directory under apps/. Ordering comes from apps/<app>/meta.yaml.
 repo:
-  url: https://github.com/jeffellin/k8s-platform   # TODO confirm host / visibility
+  url: https://github.com/jeffellin/k8s-platform-.git
   branch: main
 
 defaults:

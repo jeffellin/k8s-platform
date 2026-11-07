@@ -36,6 +36,38 @@ spec:
       aws_region: us-east-1
       zone_id: Z01234567EXAMPLE
       external_dns_txt_id: talos-test
+  - name: contour
+    dependsOn:
+    - name: metallb-config
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: Z01234567EXAMPLE
+      external_dns_txt_id: talos-test
+  - name: cert-manager
+    dependsOn:
+    - name: cert-manager-secrets
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: Z01234567EXAMPLE
+      external_dns_txt_id: talos-test
+  - name: cluster-issuers
+    dependsOn:
+    - name: cert-manager
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: Z01234567EXAMPLE
+      external_dns_txt_id: talos-test
+  - name: external-dns
+    dependsOn:
+    - name: external-dns-secrets
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: Z01234567EXAMPLE
+      external_dns_txt_id: talos-test
   resourcesTemplate: |
     - apiVersion: kustomize.toolkit.fluxcd.io/v1
       kind: Kustomization
@@ -53,3 +85,28 @@ spec:
         dependsOn: << inputs.dependsOn | toJson >>
         postBuild:
           substitute: << inputs.vars | toJson >>
+---
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSet
+metadata:
+  name: app-secrets
+  namespace: flux-system
+spec:
+  inputs:
+  - name: cert-manager
+    cluster: talos-test
+  - name: external-dns
+    cluster: talos-test
+  resourcesTemplate: |
+    - apiVersion: kustomize.toolkit.fluxcd.io/v1
+      kind: Kustomization
+      metadata:
+        name: << inputs.name >>-secrets
+        namespace: flux-system
+      spec:
+        interval: 10m
+        prune: true
+        wait: true
+        path: ./clusters/<< inputs.cluster >>/secrets/<< inputs.name >>
+        sourceRef: {kind: GitRepository, name: flux-system}
+        decryption: {provider: sops, secretRef: {name: sops-age}}
