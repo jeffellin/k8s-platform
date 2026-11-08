@@ -17,6 +17,8 @@ clusters:
       external_dns_txt_id: talos-test
     apps:
       - name: metallb
+        options:
+          metallb_ignore_exclude_lb: "true"   # single node: the control plane must serve LoadBalancer IPs
       - name: metallb-config
         options:
           metal_lb_address_pool: 192.168.1.156-192.168.1.160

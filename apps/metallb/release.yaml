@@ -17,3 +17,8 @@ spec:
       sourceRef: {kind: HelmRepository, name: metallb}
   install: {crds: CreateReplace}
   upgrade: {crds: CreateReplace}
+  values:
+    speaker:
+      # false (default): MetalLB skips nodes labelled exclude-from-external-load-balancers (control planes).
+      # Set metallb_ignore_exclude_lb: "true" per cluster for single-node clusters.
+      ignoreExcludeLB: ${metallb_ignore_exclude_lb:=false}
