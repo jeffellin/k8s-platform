@@ -44,10 +44,10 @@ metadata:
 spec:
   ingressClassName: contour
   tls:
-    - hosts: [${hello_host}]
+    - hosts: ["${hello_host}"]
       secretName: hello-nginx-tls
   rules:
-    - host: ${hello_host}
+    - host: "${hello_host}"
       http:
         paths:
           - path: /
