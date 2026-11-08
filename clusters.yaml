@@ -26,3 +26,6 @@ clusters:
       - name: cert-manager        # needs secrets/cert-manager/aws-credentials.sops.yaml
       - name: cluster-issuers
       - name: external-dns        # needs secrets/external-dns/aws-credentials.sops.yaml
+      - name: hello-nginx
+        options:
+          hello_host: hello.ellin.net

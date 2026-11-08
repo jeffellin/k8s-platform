@@ -1,0 +1,1 @@
+dependsOn: [contour, cluster-issuers, external-dns]

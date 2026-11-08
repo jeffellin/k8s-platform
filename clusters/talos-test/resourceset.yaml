@@ -68,6 +68,17 @@ spec:
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: talos-test
+  - name: hello-nginx
+    dependsOn:
+    - name: contour
+    - name: cluster-issuers
+    - name: external-dns
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: ZM4W2IR7IZJ3M
+      external_dns_txt_id: talos-test
+      hello_host: hello.ellin.net
   resourcesTemplate: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
