@@ -271,7 +271,8 @@ only if you later want HA control planes with automated rolling replacement.
 1. ~~Crossplane vs CAPI~~ decided: Crossplane v2 (D6).
 2. VM mechanism: start with the Job calling the Proxmox API; Upjet provider (with Jeff's contacts) as a later option.
 3. Secrets: P1 (manager supplies), P2 (shared key), or P3 (pre-generated key)?
-4. Does `pve2` need its own template (no shared storage), and do you want CP/workers spread across nodes? `ProxmoxEnvironment` as a new CRD or a Crossplane `EnvironmentConfig`?
+4. ~~Template on `pve2` / placement / environment object~~ decided: `pve` only at first, `pve2` templates later; Proxmox settings in a Crossplane `EnvironmentConfig` (no new CRD).
 5. ~~Manager reach to VLAN 10~~ resolved: all networks route to each other. Remaining: can Talos nodes reach GitHub and `factory.talos.dev`/registries for installs and upgrades?
-6. Is a control-plane VIP needed later (HA = more CPs)? The spec says 1 CP; keep a path to 3 open?
-7. Where should the bootstrapper image live (ghcr.io/jeffellin, Gitea registry) and how is it built (Gitea Actions / GitHub Actions)?
+6. ~~HA / VIP~~ decided: single control plane now; keep the spec shaped so a list of control planes can replace it later.
+7. ~~Bootstrapper image location~~ decided: Jeff's existing Docker image repo (Docker Hub; account/repo name and build method still to be confirmed).
+3. Secrets: **still open**. Default is P1 (manager supplies credentials), pending Jeff's confirmation.
