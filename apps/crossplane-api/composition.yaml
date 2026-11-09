@@ -31,6 +31,8 @@ spec:
           {{- $env := index .context "apiextensions.crossplane.io/environment" -}}
           {{- $px := $env.proxmox -}}
           {{- $name := $xr.metadata.name -}}
+          {{- /* Job pod templates are immutable: bump $rev whenever a talos/verify/platform Job spec changes so Crossplane recreates the Jobs (all scripts are idempotent). */ -}}
+          {{- $rev := "r2" -}}
           {{- $node := $xr.spec.node | default $px.defaultNode -}}
           {{- $nodeCfg := index $px.nodes $node -}}
           {{- $tmpl := index $nodeCfg.templates $xr.spec.talosVersion -}}
@@ -105,19 +107,19 @@ spec:
           {{- $verifyDone := false -}}
           {{- $platformDone := false -}}
           {{- if $vmsReady }}
-          {{- $tobs := (index ($.observed.resources | default dict) (printf "talos-%s" $name)) | default dict -}}
+          {{- $tobs := (index ($.observed.resources | default dict) (printf "talos-%s-%s" $name $rev)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $tobs)) 0 }}{{ $talosDone = true }}{{ end }}
-          {{- $vobs := (index ($.observed.resources | default dict) (printf "verify-%s" $name)) | default dict -}}
+          {{- $vobs := (index ($.observed.resources | default dict) (printf "verify-%s-%s" $name $rev)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $vobs)) 0 }}{{ $verifyDone = true }}{{ end }}
-          {{- $pobs := (index ($.observed.resources | default dict) (printf "platform-%s" $name)) | default dict -}}
+          {{- $pobs := (index ($.observed.resources | default dict) (printf "platform-%s-%s" $name $rev)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $pobs)) 0 }}{{ $platformDone = true }}{{ end }}
           ---
           apiVersion: kubernetes.m.crossplane.io/v1alpha1
           kind: Object
           metadata:
-            name: talos-{{ $name }}
+            name: talos-{{ $name }}-{{ $rev }}
             annotations:
-              gotemplating.fn.crossplane.io/composition-resource-name: talos-{{ $name }}
+              gotemplating.fn.crossplane.io/composition-resource-name: talos-{{ $name }}-{{ $rev }}
               gotemplating.fn.crossplane.io/ready: {{ if $talosDone }}"True"{{ else }}"False"{{ end }}
           spec:
             providerConfigRef: {kind: ClusterProviderConfig, name: default}
@@ -126,7 +128,7 @@ spec:
                 apiVersion: batch/v1
                 kind: Job
                 metadata:
-                  name: talos-{{ $name }}
+                  name: talos-{{ $name }}-{{ $rev }}
                   namespace: talos-automation
                   labels: {platform.ellin.net/cluster: {{ $name }}}
                 spec:
@@ -144,7 +146,24 @@ spec:
                       - name: talos
                         image: {{ $env.talos.image }}
                         # cluster-up.sh is idempotent: the VM step is a no-op ("exists, skipping") because the clone Jobs ran first.
-                        command: [cluster-up.sh]
+                        command:
+                        - bash
+                        - -ec
+                        - |
+                          cluster-up.sh
+                          # E5: a cluster built with 0 workers has no control-plane taint. Once workers exist, re-apply the
+                          # regenerated controlplane.yaml (it keeps the taint) live, no reboot. No-op when already tainted.
+                          # TODO: move into hack/talos-apply-bootstrap.sh on the next image rebuild.
+                          if [ -n "$WORKER_IPS" ]; then
+                            D="/work/$CLUSTER_NAME"
+                            TC="talosctl --talosconfig $D/talosconfig -e $CP_IP -n $CP_IP"
+                            if $TC apply-config --file "$D/controlplane.yaml" --dry-run 2>&1 | grep -q '^+taints:'; then
+                              echo "workers > 0 but the control plane is untainted: applying taint (no reboot)"
+                              $TC apply-config --file "$D/controlplane.yaml" --mode=no-reboot
+                            else
+                              echo "control-plane taint already in place"
+                            fi
+                          fi
                         env:
                         - {name: CLUSTER_NAME, value: {{ $name | quote }}}
                         - {name: CP_IP, value: {{ $xr.spec.network.controlPlaneIP | quote }}}
@@ -177,9 +196,9 @@ spec:
           apiVersion: kubernetes.m.crossplane.io/v1alpha1
           kind: Object
           metadata:
-            name: verify-{{ $name }}
+            name: verify-{{ $name }}-{{ $rev }}
             annotations:
-              gotemplating.fn.crossplane.io/composition-resource-name: verify-{{ $name }}
+              gotemplating.fn.crossplane.io/composition-resource-name: verify-{{ $name }}-{{ $rev }}
               gotemplating.fn.crossplane.io/ready: {{ if $verifyDone }}"True"{{ else }}"False"{{ end }}
           spec:
             providerConfigRef: {kind: ClusterProviderConfig, name: default}
@@ -188,7 +207,7 @@ spec:
                 apiVersion: batch/v1
                 kind: Job
                 metadata:
-                  name: verify-{{ $name }}
+                  name: verify-{{ $name }}-{{ $rev }}
                   namespace: talos-automation
                   labels: {platform.ellin.net/cluster: {{ $name }}}
                 spec:
@@ -228,9 +247,9 @@ spec:
           apiVersion: kubernetes.m.crossplane.io/v1alpha1
           kind: Object
           metadata:
-            name: platform-{{ $name }}
+            name: platform-{{ $name }}-{{ $rev }}
             annotations:
-              gotemplating.fn.crossplane.io/composition-resource-name: platform-{{ $name }}
+              gotemplating.fn.crossplane.io/composition-resource-name: platform-{{ $name }}-{{ $rev }}
               gotemplating.fn.crossplane.io/ready: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}
           spec:
             providerConfigRef: {kind: ClusterProviderConfig, name: default}
@@ -239,7 +258,7 @@ spec:
                 apiVersion: batch/v1
                 kind: Job
                 metadata:
-                  name: platform-{{ $name }}
+                  name: platform-{{ $name }}-{{ $rev }}
                   namespace: talos-automation
                   labels: {platform.ellin.net/cluster: {{ $name }}}
                 spec:
