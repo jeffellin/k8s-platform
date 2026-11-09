@@ -1,7 +1,7 @@
-name: talosbootstraper image
+name: talos-automation image
 
-# Builds jeffellin/talosbootstraper from image/Dockerfile and pushes it to Docker Hub.
-# Needs repository secrets: DOCKERHUB_USERNAME (jeffellin) and DOCKERHUB_TOKEN (a Docker Hub access token with write scope).
+# Builds ellinj/talos-automation from image/Dockerfile and pushes it to Docker Hub.
+# Needs repository secrets: DOCKERHUB_USERNAME (ellinj) and DOCKERHUB_TOKEN (a Docker Hub access token with write scope).
 on:
   push:
     branches: [main]
@@ -12,12 +12,12 @@ on:
       - hack/talos-gen-config.sh
       - hack/talos-apply-bootstrap.sh
       - hack/talos-apply-worker.sh
-      - .github/workflows/talosbootstraper-image.yml
+      - .github/workflows/talos-automation-image.yml
     tags: ["image-v*"]
   workflow_dispatch:
 
 env:
-  IMAGE: jeffellin/talosbootstraper
+  IMAGE: ellinj/talos-automation
 
 jobs:
   build:

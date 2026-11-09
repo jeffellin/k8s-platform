@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# jeffellin/talosbootstraper: tools + hack/ scripts to turn a Proxmox template into a Talos cluster.
-# Build from the repo root:   docker build -f image/Dockerfile -t jeffellin/talosbootstraper:dev .
+# ellinj/talos-automation: tools + hack/ scripts to turn a Proxmox template into a Talos cluster.
+# Build from the repo root:   docker build -f image/Dockerfile -t ellinj/talos-automation:dev .
 # The platform layer (bootstrap/bootstrap.sh, render.py, clusters.yaml) is NOT baked in:
 # jobs `git clone` the repo at run time so the image does not need rebuilding for app changes.
 
@@ -50,7 +50,7 @@ RUN set -eux; \
     chmod +x talosctl kubectl yq sops flux
 
 FROM debian:trixie-slim
-LABEL org.opencontainers.image.title="talosbootstraper" \
+LABEL org.opencontainers.image.title="talos-automation" \
       org.opencontainers.image.description="Clones Proxmox Talos VMs, generates/applies Talos configs, bootstraps Flux" \
       org.opencontainers.image.source="https://github.com/jeffellin/k8s-platform-"
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -31,7 +31,7 @@ platform layer (Flux Operator + this repo's apps) running on it.
 | D7 | Secrets use **P1**: the manager holds the AWS credentials in a **plain Secret** (seeded from 1Password by `hack/seed-secrets.sh`); the bootstrap Job writes them into each new cluster. SOPS stays for legacy clusters. External Secrets may replace the plain Secret later without changing the Job. |
 | D8 | Start with Proxmox node **`pve`** only. `pve2` templates/placement later. |
 | D9 | **Single control plane** now. Keep the spec shaped so a list of control planes (HA + VIP) can replace it later. |
-| D10 | Bootstrapper image: Docker Hub **`jeffellin/talosbootstraper`** (spelling as given). Build method (likely GitHub Actions in this repo) still to decide. |
+| D10 | Bootstrapper image: Docker Hub **`ellinj/talos-automation`** (renamed from `jeffellin/talosbootstraper` on 2026-11-09). Build method (likely GitHub Actions in this repo) still to decide. |
 | D11 | Networking: Proxmox hosts have two NICs (192.168.1.x `vmbr0`, 192.168.8.x `vmbr1`/VLAN 10), all VLANs route to each other, and VLAN 10 can reach everything it needs (Image Factory, registries, GitHub). Manager uses the 1.x API address by default. |
 | D12 | `XR` is **namespaced** (Crossplane v2: no claims). Kubeconfig/talosconfig Secrets are emitted explicitly by the composition. |
 | D13 | Changes that affect an existing running cluster (e.g. `talos-test`) are built on a branch and **merged to `main` only on Jeff's go-ahead**. Adding the new `lab-manager` entry does not touch `talos-test`. |
@@ -118,7 +118,7 @@ Notes:
 
 ### 5.2 Talos layer (custom image, Jobs)
 
-Image `jeffellin/talosbootstraper`: `talosctl` matching the cluster version, kubectl, jq/yq, sops, age, flux CLI, `bootstrap.sh`.
+Image `ellinj/talos-automation`: `talosctl` matching the cluster version, kubectl, jq/yq, sops, age, flux CLI, `bootstrap.sh`.
 Each step is idempotent and safe to re-run on every reconcile:
 
 1. `gen-secrets`: if Secret `<name>-talos-secrets` is absent, `talosctl gen secrets -o secrets.yaml` and store it. **Also back it up to 1Password.**
@@ -213,7 +213,7 @@ Revisit CAPI only if HA control planes with automated rolling replacement become
 0. Done: decisions D1-D14; backups of `homelab` Talos secrets and etcd; template 9100 assumed present.
 0b. **Build `lab-manager`** (single node, VLAN 10) with scripts + the legacy bootstrap path; verify core apps and `hello-nginx`-style cert/DNS work there. See backlog epics A-B.
 1. **Crossplane on `lab-manager`** (branch, merge on go-ahead): `apps/crossplane`, functions, provider-kubernetes, `EnvironmentConfig` for `homelab`, Proxmox API token Secret; `nc -zv` smoke test to VLAN 10 on 50000/6443 from a manager pod.
-2. **Image:** build and publish `jeffellin/talosbootstraper` (with `bootstrap.sh`); test by hand against a throwaway VM; decide the build pipeline.
+2. **Image:** build and publish `ellinj/talos-automation` (with `bootstrap.sh`); test by hand against a throwaway VM; decide the build pipeline.
 3. **XRD + composition, VM layer only:** create/destroy a 1-node cluster's VMs; test the N -> 0 CEL rule.
 4. **Talos layer:** end-to-end 1 control plane, 0 workers (taint removed, `ignoreExcludeLB` true), matching `lab-manager`.
 5. **Platform layer (P1):** age key, AWS credentials from the manager Secret, `bootstrap.sh` logic; legacy path unchanged; adjust `render.py` for manager-supplied secrets.
@@ -222,7 +222,7 @@ Revisit CAPI only if HA control planes with automated rolling replacement become
 
 ## 13. Open items
 
-- Image build method for `jeffellin/talosbootstraper` (GitHub Actions in this repo is the likely choice).
+- Image build method for `ellinj/talos-automation` (GitHub Actions in this repo is the likely choice).
 - Credentials Secret layout on the manager (names/keys) and how `seed-secrets.sh` populates it.
 - Exact Proxmox API token permissions.
 - Composition function language (go-templating vs KCL).
