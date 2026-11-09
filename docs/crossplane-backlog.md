@@ -13,7 +13,7 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 
 ## Status (updated 2026-11-09, end of day)
 
-**Where we are:** Epics A-D are done. `lab-manager` (192.168.10.56, VM 10056) runs Flux, the legacy platform apps, and Crossplane v2 with functions, provider-kubernetes and `EnvironmentConfig/homelab`. A Job on the manager created a throwaway cluster from a single `kubectl apply` (C3). **Epic E in progress:** E1 and E2 done (PRs #5 merged, #6 open). **Next: E3** (Talos layer), then E4, E5, F.
+**Where we are:** Epics A-D are done. `lab-manager` (192.168.10.56, VM 10056) runs Flux, the legacy platform apps, and Crossplane v2 with functions, provider-kubernetes and `EnvironmentConfig/homelab`. A Job on the manager created a throwaway cluster from a single `kubectl apply` (C3). **Epic E in progress:** E1, E2 done (PRs #5, #6 merged); E3 done (PR #7 open). **Next: E4** (platform layer), then E5, F.
 
 **Open items for Jeff**
 - Back up `~/.config/sops/age/lab-manager.agekey` and `_talos/lab-manager/secrets.yaml` (1Password); both exist only on the Pi.
@@ -43,7 +43,8 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | D2 functions + provider | **Done** (PR #3): `apps/crossplane-config` (function-go-templating v0.13.2, function-environment-configs v0.9.2, function-auto-ready v0.7.3, provider-kubernetes v1.4.1 with a fixed ServiceAccount bound to cluster-admin) and `apps/crossplane-providerconfig` (`ClusterProviderConfig/default`, `kubernetes.m.crossplane.io/v1alpha1`, InjectedIdentity). All Installed and Healthy. Main-bound work is done in the worktree `/home/jeff/homelab/k8s-platform-main`. D3 next. |
 | D3 EnvironmentConfig | **Done** (PR #4): `apps/crossplane-environment` -> `EnvironmentConfig/homelab` (one per Proxmox cluster, per-node settings inside; only `pve` + template `v1.14.5: 9100` for now). Secrets `proxmox-token` and `aws-credentials` created out of band in `talos-automation` on the manager (AWS from 1Password `r53-aws`). |
 | E1 XRD | **Done** (PR #5, merged): `apps/crossplane-api` XRD v2 namespaced `platform.ellin.net/v1alpha1 TalosCluster`, CEL: workerIPs==workers.count, IPs outside DHCP range, N->0 forbidden (`oldSelf` transition rule works; CEL cost needed maxLength/maxItems). Status fields must be declared in the XRD schema. |
-| E2 VM layer | **Done** (PR #6 open, Jeff to merge): composition renders a clone Job per node via provider-kubernetes Object (ns talos-automation, from EnvironmentConfig + XR); status phase VMsCreating/VMsReady, vms ready/total; provider polls every 30s. Deleting the XR removes Jobs, NOT VMs (teardown = F3). Leftover test VMs 10064/10065 (e2test, 192.168.10.64/.65) still in Proxmox, not in allocation doc: delete or reuse for E3. Flux reverts hand-applied changes until PR merges. |
+| E2 VM layer | **Done** (PR #6, merged): composition renders a clone Job per node via provider-kubernetes Object (ns talos-automation, from EnvironmentConfig + XR); status phase VMsCreating/VMsReady, vms ready/total; provider polls every 30s. Deleting the XR removes Jobs, NOT VMs (teardown = F3). Leftover test VMs 10064/10065 (e2test, 192.168.10.64/.65) reused for E3; not in allocation doc. Flux reverts hand-applied changes until PR merges. |
+| E3 Talos layer | **Done** (PR #7 open, Jeff to merge, then `flux resume kustomization crossplane-api -n flux-system`; it is suspended on lab-manager): once all VMs are cloned the composition renders a `talos-<name>` Job (runs idempotent `cluster-up.sh`, VM step is a no-op), then a `verify-<name>` Job (kubectl wait nodes Ready, count == CP+workers, using the emitted kubeconfig Secret). XR conditions `VMsReady`/`TalosReady`/`KubernetesReady` (function-go-templating v0.13.2 needs `kind: ClaimConditions`, not CompositeConditions); phases VMsCreating, TalosApplying, KubernetesVerifying, Ready; status names `<name>-kubeconfig`/`<name>-talosconfig` Secrets. Proven live with `e2test` (1 CP + 1 worker, VMs 10064/10065): Ready in ~6 min, CP tainted, worker untainted (so E5's basic N>0 path works; 0->1 on an existing cluster untested). Caveat: the Talos Job still holds the Proxmox token (cluster-up.sh clone check); a SKIP_VMS option needs an image rebuild. `e2test` XR, VMs and Secrets still exist; delete on Jeff's word (XR delete does not remove VMs, F3). |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
 | B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 done. |
 
@@ -184,7 +185,7 @@ As the Jobs, I need one image with the tools.
 - Done when: applying an XR creates the VMs; deleting the XR with the protection annotation absent is refused/handled per design.
 - Demo: VMs appear in Proxmox with correct names, IDs, tags; re-applying changes nothing.
 
-**E3. Talos layer via composition** (L)
+**E3. Talos layer via composition** (L) **DONE (PR #7)**
 - Do: Jobs for gen-secrets/gen-config/apply/bootstrap; status conditions `VMsReady`, `TalosReady`, `KubernetesReady`; kubeconfig + talosconfig Secrets emitted.
 - Done when: an XR with `workers.count: 0` produces a Ready, untainted single node.
 - Demo: `kubectl get talosclusters` shows READY=True; kubectl against the emitted kubeconfig works.
