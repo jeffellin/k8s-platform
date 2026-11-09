@@ -13,7 +13,7 @@ Status: **idea, no code**. Nothing here is verified against the live cluster; it
 
 - **D6** **Crossplane v2 is the chosen approach** (spike result below). Jeff has contacts on the Upjet side, so if the Job-based VM layer proves awkward, a proper Upjet-generated Proxmox provider is an available fallback rather than a dependency.
 
-- **D7** Secrets use **P1**: bootstrap creates the per-cluster age key and stores it on the manager; the AWS credentials are held on the manager and written into the new cluster by the bootstrap Job (no SOPS files needed for them).
+- **D7** Secrets use **P1**: bootstrap creates the per-cluster age key and stores it on the manager; the AWS credentials are held on the manager and written into the new cluster by the bootstrap Job (no SOPS files needed for them). For now the credentials live in a **plain Secret on the manager**, seeded from 1Password by `hack/seed-secrets.sh`; External Secrets can replace it later without changing the Job.
 
 ## Goal
 
