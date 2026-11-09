@@ -1,6 +1,7 @@
 # E2: VM layer. One clone Job (via provider-kubernetes Object) per node.
 # E3: Talos layer (cluster-up.sh Job, gated on all VMs ready) + Kubernetes verify Job (gated on Talos Job).
-# Status: phase + conditions VMsReady, TalosReady, KubernetesReady.
+# E4: platform Job (age key, sops-age, AWS creds, Flux Operator + FluxInstance via bootstrap.sh), gated on verify.
+# Status: phase + conditions VMsReady, TalosReady, KubernetesReady, PlatformReady.
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -102,11 +103,14 @@ spec:
           {{- $workerIPs := join "," ($xr.spec.network.workerIPs | default list) -}}
           {{- $talosDone := false -}}
           {{- $verifyDone := false -}}
+          {{- $platformDone := false -}}
           {{- if $vmsReady }}
           {{- $tobs := (index ($.observed.resources | default dict) (printf "talos-%s" $name)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $tobs)) 0 }}{{ $talosDone = true }}{{ end }}
           {{- $vobs := (index ($.observed.resources | default dict) (printf "verify-%s" $name)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $vobs)) 0 }}{{ $verifyDone = true }}{{ end }}
+          {{- $pobs := (index ($.observed.resources | default dict) (printf "platform-%s" $name)) | default dict -}}
+          {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $pobs)) 0 }}{{ $platformDone = true }}{{ end }}
           ---
           apiVersion: kubernetes.m.crossplane.io/v1alpha1
           kind: Object
@@ -219,6 +223,93 @@ spec:
                       - name: kube
                         secret: {secretName: {{ $name }}-kubeconfig}
           {{- end }}
+          {{- if $verifyDone }}
+          ---
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: platform-{{ $name }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: platform-{{ $name }}
+              gotemplating.fn.crossplane.io/ready: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}
+          spec:
+            providerConfigRef: {kind: ClusterProviderConfig, name: default}
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: platform-{{ $name }}
+                  namespace: talos-automation
+                  labels: {platform.ellin.net/cluster: {{ $name }}}
+                spec:
+                  backoffLimit: 3
+                  activeDeadlineSeconds: 3000
+                  template:
+                    spec:
+                      serviceAccountName: cluster-up
+                      restartPolicy: Never
+                      securityContext:
+                        runAsNonRoot: true
+                        runAsUser: 10001
+                        seccompProfile: {type: RuntimeDefault}
+                      containers:
+                      - name: platform
+                        image: {{ $env.talos.image }}
+                        env:
+                        - {name: CLUSTER_NAME, value: {{ $name | quote }}}
+                        - {name: REPO_URL, value: {{ $env.git.url | quote }}}
+                        - {name: REPO_BRANCH, value: {{ $env.git.branch | quote }}}
+                        - {name: FLUX_OPERATOR_VERSION, value: {{ $env.flux.operatorVersion | quote }}}
+                        - {name: HOME, value: /work}
+                        command:
+                        - bash
+                        - -ec
+                        - |
+                          K="kubectl -n talos-automation"
+                          N="$CLUSTER_NAME"
+                          retry() { for i in 1 2 3 4 5 6; do "$@" && return 0; echo "retry $i: $*"; sleep 20; done; return 1; }
+                          mkdir -p "$HOME/.config/sops/age" /work/repo; chmod 700 "$HOME/.config/sops/age"
+                          KEY="$HOME/.config/sops/age/$N.agekey"
+                          # cluster age key: created once, kept on the manager, never regenerated
+                          if $K get secret "$N-age-key" >/dev/null 2>&1; then
+                            $K get secret "$N-age-key" -o jsonpath='{.data.age\.agekey}' | base64 -d > "$KEY"
+                          else
+                            (umask 077; age-keygen -o "$KEY" 2>/dev/null)
+                            $K create secret generic "$N-age-key" --from-file=age.agekey="$KEY"
+                          fi
+                          chmod 600 "$KEY"
+                          $K get secret "$N-kubeconfig" -o jsonpath='{.data.kubeconfig}' | base64 -d > /work/kubeconfig
+                          $K get secret aws-credentials -o json > /work/aws.json   # from the manager, before KUBECONFIG switches
+                          export KUBECONFIG=/work/kubeconfig
+                          retry git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" /work/repo/src
+                          cd /work/repo/src
+                          [ -d "clusters/$N" ] || { echo "clusters/$N is not in $REPO_URL@$REPO_BRANCH: add it to clusters.yaml, run hack/render.py, commit"; exit 1; }
+                          # AWS credentials from the manager (P1): same name/keys the apps expect
+                          for ns in cert-manager external-dns; do
+                            kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
+                            jq --arg ns "$ns" '{apiVersion,kind,type,metadata:{name:.metadata.name,namespace:$ns},data}' /work/aws.json \
+                              | kubectl apply -f -
+                          done
+                          retry env AGE_KEY_FILE="$KEY" bootstrap/bootstrap.sh "$N"
+                          want=$(python3 -I -c "import yaml;print(len(yaml.safe_load(open('clusters.yaml'))['clusters']['$N']['apps']))")
+                          echo "waiting for $want app kustomizations"
+                          for i in $(seq 1 150); do
+                            have=$(kubectl -n flux-system get kustomization --no-headers 2>/dev/null | grep -vc '^flux-system ' || true)
+                            notready=$(kubectl -n flux-system get kustomization --no-headers 2>/dev/null | grep -v True | wc -l)
+                            echo "kustomizations: $have/$want, not ready: $notready"
+                            [ "$have" -ge "$want" ] && [ "$notready" -eq 0 ] && { kubectl -n flux-system get kustomization; echo "platform ready: $N"; exit 0; }
+                            sleep 10
+                          done
+                          echo "timed out waiting for Flux"; kubectl -n flux-system get kustomization; exit 1
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                        volumeMounts:
+                        - {name: work, mountPath: /work}
+                      volumes:
+                      - {name: work, emptyDir: {}}
+          {{- end }}
           ---
           apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
           kind: ClaimConditions
@@ -226,11 +317,12 @@ spec:
           - {type: VMsReady, status: {{ if $vmsReady }}"True"{{ else }}"False"{{ end }}, reason: {{ if $vmsReady }}AllVMsCloned{{ else }}VMsCreating{{ end }}, target: Composite}
           - {type: TalosReady, status: {{ if $talosDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $talosDone }}ClusterBootstrapped{{ else }}Pending{{ end }}, target: Composite}
           - {type: KubernetesReady, status: {{ if $verifyDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $verifyDone }}AllNodesReady{{ else }}Pending{{ end }}, target: Composite}
+          - {type: PlatformReady, status: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $platformDone }}FluxSynced{{ else }}Pending{{ end }}, target: Composite}
           ---
           apiVersion: platform.ellin.net/v1alpha1
           kind: TalosCluster
           status:
-            phase: {{ if $verifyDone }}Ready{{ else if $talosDone }}KubernetesVerifying{{ else if $vmsReady }}TalosApplying{{ else }}VMsCreating{{ end }}
+            phase: {{ if $platformDone }}Ready{{ else if $verifyDone }}PlatformApplying{{ else if $talosDone }}KubernetesVerifying{{ else if $vmsReady }}TalosApplying{{ else }}VMsCreating{{ end }}
             controlPlane:
               name: {{ $name }}-cp-1
               vmid: {{ $cpip := splitList "." $xr.spec.network.controlPlaneIP }}{{ printf "%d%03d" (index $cpip 2 | atoi) (index $cpip 3 | atoi) }}
