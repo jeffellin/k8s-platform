@@ -80,6 +80,13 @@ spec:
       zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: lab-manager
       hello_host: hello-manager.ellin.net
+  - name: crossplane
+    dependsOn: []
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: ZM4W2IR7IZJ3M
+      external_dns_txt_id: lab-manager
   resourcesTemplate: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization

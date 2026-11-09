@@ -1,0 +1,21 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata: {name: crossplane-stable, namespace: crossplane-system}
+spec:
+  interval: 1h
+  url: https://charts.crossplane.io/stable
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: {name: crossplane, namespace: crossplane-system}
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: crossplane
+      version: 2.4.x          # Crossplane v2 (namespaced XRs, composition functions)
+      sourceRef: {kind: HelmRepository, name: crossplane-stable}
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace

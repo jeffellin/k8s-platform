@@ -50,3 +50,4 @@ clusters:
       - name: hello-nginx
         options:
           hello_host: hello-manager.ellin.net
+      - name: crossplane          # the cluster manager; enabled only here
