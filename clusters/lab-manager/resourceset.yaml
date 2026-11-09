@@ -87,6 +87,22 @@ spec:
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: lab-manager
+  - name: crossplane-config
+    dependsOn:
+    - name: crossplane
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: ZM4W2IR7IZJ3M
+      external_dns_txt_id: lab-manager
+  - name: crossplane-providerconfig
+    dependsOn:
+    - name: crossplane-config
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: ZM4W2IR7IZJ3M
+      external_dns_txt_id: lab-manager
   resourcesTemplate: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
