@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build + SOPS-encrypt the AWS credentials secrets for a cluster straight from 1Password (nothing plaintext on disk or in output).
-# Usage: hack/seed-secrets.sh <cluster> ; run after hack/new-cluster.sh. Needs `op` signed in.
+# Usage: hack/seed-secrets.sh <cluster> ; run after hack/new-sops-cluster.sh. Needs `op` signed in.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; C="${1:?usage: $0 <cluster>}"
 OP_ITEM="${AWS_OP_ITEM:-op://HomeLab/r53-aws}"

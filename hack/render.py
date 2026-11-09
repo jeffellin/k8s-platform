@@ -65,7 +65,7 @@ errors = []
 def pub(name):
     p = ROOT / "keys" / f"{name}.pub"
     if not p.exists():
-        errors.append(f"missing keys/{name}.pub -- run hack/new-cluster.sh {name}" if name != "admin" else "missing keys/admin.pub -- run hack/new-cluster.sh <cluster>")
+        errors.append(f"missing keys/{name}.pub -- run hack/new-sops-cluster.sh {name}" if name != "admin" else "missing keys/admin.pub -- run hack/new-sops-cluster.sh <cluster>")
         return "MISSING"
     return p.read_text().strip()
 sops_rules = []

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Scaffold (or remove) a Crossplane-built Talos cluster: XR file, clusters.yaml entry, rendered clusters/<name>/,
+# Crossplane path: scaffold (or remove) a Crossplane-built Talos cluster (secrets: manager, no SOPS keys needed;
+# for SOPS-managed clusters such as lab-manager use hack/new-sops-cluster.sh): XR file, clusters.yaml entry, rendered clusters/<name>/,
 # and the VLAN 10 allocation rows. Review the diff, then commit + PR; merging is the "one commit".
 #
 #   hack/new-talos-cluster.sh <name> [--workers N] [--cp-ip IP] [--worker-ips IP,IP] [--lb-range A-B]
