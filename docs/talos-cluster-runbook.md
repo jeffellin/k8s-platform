@@ -1,6 +1,6 @@
 # Runbook: Crossplane-built Talos clusters
 
-Create, update and delete a Talos cluster with what exists today (as of 2026-11-09: backlog epics A-E, F3, F4 done).
+Create, update and delete a Crossplane-built Talos cluster (sections 1-3), and onboard any other cluster by the SOPS path (section 4), with what exists today (as of 2026-11-09: backlog epics A-E, F3, F4 done).
 Design background: `docs/crossplane-cluster-lifecycle.md` (D15 and section 8.1 for teardown). Open work: `docs/crossplane-backlog.md`.
 
 ## How it fits together
@@ -127,6 +127,43 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
 
 **First use of the Git-driven delete:** teardown and the Flux prune of a *Flux-managed* XR have not been exercised end to end yet (the F3 tests used hand-applied XRs). Do the first one on a throwaway cluster and note the result here.
 
+## 4. Onboard an existing cluster (SOPS path)
+
+For a cluster that Crossplane did not build (kubeadm, k3s, terraform, a Talos cluster built by hand, `lab-manager` itself). It gets the platform apps from Git
+but is **not** managed by Crossplane: no XR, no teardown flow, the manager does not know about it. Its secrets are SOPS files in Git, encrypted to your admin
+age key and to a key for that cluster.
+
+Prerequisites: a working Kubernetes cluster and its kubeconfig; it can reach GitHub, `ghcr.io` and the Helm chart repos (the repo is public, so no deploy key);
+`op` signed in (for the AWS credentials). Work from a checkout of `main` with the current scripts, on a branch off `origin/main`.
+
+1. **Add the cluster to `clusters.yaml`.** Copy the `lab-manager` or `talos-test` entry and change the name, apps, MetalLB range (reserve it in `VLAN10-IP-ALLOCATION.md`),
+   `external_dns_txt_id` and hello host. Set `metallb_ignore_exclude_lb: "true"` only for a single-node cluster. The script in step 2 fails if the entry is missing.
+2. **`hack/new-sops-cluster.sh <name>`.** Creates `~/.config/sops/age/<name>.agekey` and `keys/<name>.pub`, drops `*.example.yaml` skeletons for apps that need secrets,
+   and renders with `--allow-incomplete`, so `.sops.yaml` gets a rule for the cluster and `clusters/<name>/` exists. **Back up the new `.agekey`** (1Password): without it
+   Flux on that cluster cannot decrypt its secrets. The key lives only on the machine where you ran the script.
+3. **Secrets.** `hack/seed-secrets.sh <name>` builds and encrypts the AWS credentials from 1Password (`op://HomeLab/r53-aws`) into the cert-manager and external-dns
+   secret files. Any other declared secret: `cp x.example.yaml x.sops.yaml`, fill it in, `sops --encrypt --in-place x.sops.yaml`.
+4. **`hack/render.py`** (no flags). This is the gate: it must pass with no errors. It fails and lists any declared secret that is missing or not encrypted.
+5. **Commit and merge** the `clusters.yaml` entry, `keys/<name>.pub`, `.sops.yaml`, `clusters/<name>/` and the encrypted `*.sops.yaml` files. Never commit while step 4 fails:
+   the cluster's Flux would try to apply secret files that are not there.
+6. **Bootstrap, last.** On the machine that holds the age key:
+   ```bash
+   KUBECONFIG=<that cluster's kubeconfig> bootstrap/bootstrap.sh <name>
+   ```
+   It installs the Flux Operator, creates `flux-system/sops-age` from `~/.config/sops/age/<name>.agekey` (or `$AGE_KEY_FILE`), and applies a `FluxInstance` syncing
+   `clusters/<name>` from `main`. `KUBECONFIG` must be set explicitly, so the wrong cluster is never targeted.
+7. **Verify** on that cluster: `kubectl -n flux-system get kustomization` (all Ready), the LoadBalancer IP answers, and the hello URL returns 200 with a Let's Encrypt cert
+   (`curl --resolve`, the Pi's DNS lags for new names). Commit the allocation-doc rows in the terraform repo.
+
+Bootstrap comes last because the cluster's Flux reads `main` the moment it starts: unmerged files or undecryptable secrets mean it syncs nothing or fails.
+The cluster does not have to exist for steps 1-5; the keys do not depend on it.
+
+**Day 2 (untested for a live cluster)**
+- Change apps, MetalLB range or options: edit the entry in `clusters.yaml`, run `hack/render.py`, PR. The cluster's own Flux picks it up.
+- Add or rotate a secret: edit/encrypt the `.sops.yaml` file, `hack/render.py`, PR. To rotate recipients: `hack/render.py`, then `sops updatekeys <file>` per file.
+- Removing a cluster: removing it from Git while it is live may make its Flux prune what it applied. Treat decommissioning as a deliberate step (tear down or wipe the cluster
+  first) and verify the behaviour on a throwaway cluster before relying on it. There is no `--remove` for the SOPS path.
+
 ## Troubleshooting
 
 | Symptom | Look at | Likely cause / fix |
@@ -136,6 +173,7 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
 | `PlatformApplying` for a long time | `logs job/platform-<name>-r2` | `clusters/<name>/` not on `main` (the Job says so and fails), GitHub download 504s (retried), a cluster app not Ready (the Job prints the count). On the cluster: `kubectl -n flux-system get kustomization,helmrelease -A`. |
 | XR `Synced=False` | `kubectl describe taloscluster <name>` | Composition render error or an Object stuck: `kubectl get objects.kubernetes.m.crossplane.io -A`. An Object stuck deleting after a Job-spec change: clear its finalizer, delete the old Job. |
 | `crossplane-api` Kustomization not Ready | `kubectl -n flux-system get kustomization crossplane-api` | Flux variable substitution chokes on `${...}` in new manifests (the `destroy-cluster` ConfigMap carries `kustomize.toolkit.fluxcd.io/substitute: disabled` for this reason); or `suspend: true` left on after hand testing. |
+| `new-sops-cluster.sh` fails with `KeyError` | The cluster is not in `clusters.yaml` yet (step 1 of section 4); it is also not the script for Crossplane-built clusters (`new-talos-cluster.sh`). |
 | Delete refused | the admission message | Working as designed: tear down first (section 3). |
 | Cert not issued / hello not 200 | `kubectl get certificate,challenge -A` on the cluster | DNS-01 delay (wait a few minutes); wrong `aws-credentials` in the cluster namespaces. |
 
