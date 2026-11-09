@@ -207,7 +207,7 @@ As the Jobs, I need one image with the tools.
 
 ## Epic F: Day-2 and polish
 
-**F1. Scale-down N -> M (M > 0)** (M): drain, reset, delete node, delete VM. Demo: 3 -> 2 workers with workloads intact.
+**F1. Scale-down N -> M (M > 0)** (M): reducing workers (e.g. 4 -> 3) must never just delete a VM. Per removed worker, highest index first: cordon, **drain** (`--ignore-daemonsets --delete-emptydir-data`, respect PodDisruptionBudgets, bounded timeout), `talosctl reset --graceful` (leaves etcd/cluster cleanly), `kubectl delete node`, then power off and delete the VM. Order matters: the composition must stop dropping the VM resource as soon as `workerIPs` shrinks; it should hold the VM until the drain Job succeeds (Job per removed node, gated and idempotent like the other layers, with a `$rev`-style name). Open points: local-path volumes pin pods to their node (a drain can't reschedule them: warn/refuse unless an annotation allows data loss), PDBs that block the drain (fail the XR with a clear condition instead of forcing), and the IP/VM ID being freed (allocation-doc reminder). New condition e.g. `ScalingDown`. Demo: 4 -> 3 workers on a test cluster with workloads intact, node drained before the VM disappears; a blocked drain leaves the node cordoned and reports why.
 **F2. Upgrades** (M): `talosVersion` bump triggers `talosctl upgrade` node by node (etcd snapshot first). Demo: v1.14.5 -> next patch on a test cluster.
 **F3. Deletion protection and teardown** (S): `allow-delete` annotation required; delete removes VMs, frees IPs (manual allocation-doc update reminder). Demo: delete attempt blocked then allowed.
 **F4. `hack/new-talos-cluster.sh`** (S): scaffolds XR + `clusters.yaml` entry + allocation rows. Demo: scaffold output for a new cluster name.
