@@ -21,6 +21,7 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | A4 reserve IP/ID/MetalLB | Done: `lab-manager` `192.168.10.56` / `10056`; MetalLB `192.168.11.10-14`. Rows are PENDING and **uncommitted** in the `terraform` repo (`VLAN10-IP-ALLOCATION.md`, branch `ansible-base-packages`). |
 | B2 config script | **Done**: `hack/talos-gen-config.sh <name> <cpIP> [--workers N]` (needs `talosctl` v1.14.5 + `yq`, installed on the Pi). Re-run gives identical configs; taint removed only when workers=0; `talosctl validate --mode cloud` passes. Output in git-ignored `_talos/<name>/`; **back up `secrets.yaml` (1Password)**. |
 | B3 apply+bootstrap | **Done**: `hack/talos-apply-bootstrap.sh <name> <ip>`. `lab-manager` is Ready, Talos v1.14.5, k8s v1.37.1, no taints. Re-run skips apply and bootstrap. Bootstrap needed a retry loop ("not available yet" while etcd prepares). Kubeconfig in git-ignored `_talos/lab-manager/kubeconfig`; **back up `secrets.yaml` and `talosconfig`**. Answers the template-version note: v1.14.5 is what landed. B5 next (Flux). |
+| B4 worker path | **Done**: throwaway `lab-test` = `lab-test-cp-1` 192.168.10.57 (VM 10057) + `lab-test-w-1` 192.168.10.58 (VM 10058), both Ready. With `--workers 1` the control-plane `NoSchedule` taint stays; 4 test pods all scheduled on the worker; worker `u-local-path-provisioner` volume ready. New script `hack/talos-apply-worker.sh <cluster> <workerIP>` (idempotent). **Not tested**: the MetalLB branch (no Flux on this cluster). VMs still running; PENDING rows in the terraform repo's `VLAN10-IP-ALLOCATION.md` (uncommitted). |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
 | B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 done. |
 
@@ -90,7 +91,7 @@ As Jeff, I want the new single-node Talos cluster built from the scripts, not by
 - Done when: `kubectl get nodes` on the new cluster shows Ready with no taints; script re-run is safe (does not re-bootstrap).
 - Demo: `kubectl get nodes -o wide` for the new cluster.
 
-**B4. (Optional, can move to E5) Prove the worker path on a throwaway cluster** (M)
+**B4. Prove the worker path on a throwaway cluster** (M) **DONE (cluster `lab-test` still running; delete when finished)**
 `lab-manager` stays single-node, so test N > 0 with a disposable second cluster (reserve two more IPs) or defer it to Crossplane story E5.
 - Do: clone worker VM, apply `worker.yaml`; control plane becomes tainted again (regenerate without the `yq` step, apply, reboot, drain).
 - Done when: control plane has the NoSchedule taint and a test pod lands on the worker. Demo: `kubectl get nodes` + pod placement.
