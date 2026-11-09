@@ -20,7 +20,7 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | A3 Proxmox API token | Done: `talos-provisioner@pve!bootstrapper`; read access verified. Clone/write rights first exercised in B1. Save the secret in 1Password if not yet done. |
 | A4 reserve IP/ID/MetalLB | Done: `lab-manager` `192.168.10.56` / `10056`; MetalLB `192.168.11.10-14`. Rows are PENDING and **uncommitted** in the `terraform` repo (`VLAN10-IP-ALLOCATION.md`, branch `ansible-base-packages`). |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
-| B1 next | Not started |
+| B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 next. |
 
 ### Action for Jeff: fix pve networking (A5)
 `pve`'s `vmbr1` is `192.168.8.2/24`; VLAN 10 is `192.168.8.0/22` and `/22` is correct. On `pve` (use the `192.168.1.52` session, not `192.168.8.2`):
@@ -54,7 +54,7 @@ As the Job, I need least-privilege API access to `pve`.
 - Do: create a role + token for clone/config/power/allocate on `pve`, `vmbr1`, the target storage and pool; store in 1Password.
 - Done when: `curl` with the token lists VMs and reads template 9100's config but cannot touch other things.
 - Demo: successful `GET /nodes/pve/qemu/9100/config`. Records the exact permission set (closes an open item).
-- Result: token `talos-provisioner@pve!bootstrapper` (privsep) works. Role `TalosProvisioner` = `VM.Allocate VM.Clone VM.Audit VM.PowerMgmt VM.Config.{CPU,Memory,Disk,Network,Cloudinit,Options} Datastore.{AllocateSpace,Audit} SDN.Use`, granted on `/vms`, `/storage/local-lvm`, `/sdn/zones/localnetwork` to **both the user and the token** (privsep needs both). Reads of template 9100, local-lvm and bridges vmbr0/vmbr1 verified. Clone/write permissions are first exercised in B1. Token secret is in 1Password (to confirm).
+- Result: token `talos-provisioner@pve!bootstrapper` (privsep) works. Role `TalosProvisioner` = `VM.Allocate VM.Clone VM.Audit VM.PowerMgmt VM.Config.{CPU,Memory,Disk,Network,Cloudinit,Options} Datastore.{AllocateSpace,Audit} SDN.Use`, granted on `/vms`, `/storage/local-lvm`, `/sdn/zones/localnetwork` to **both the user and the token** (privsep needs both). Reads of template 9100, local-lvm and bridges vmbr0/vmbr1 verified. Clone/write permissions verified in B1. Token secret is in 1Password (to confirm).
 
 **A4. Reserve IP/ID and MetalLB range for `lab-manager`** (S) **DONE (rows added as PENDING, uncommitted in the `terraform` repo)**
 - Chosen: node `192.168.10.56` / VM ID `10056` / name `lab-manager` / Proxmox node `pve` / gateway `192.168.10.1` (/22); MetalLB `192.168.11.10-192.168.11.14`.
@@ -68,7 +68,7 @@ As Jeff, I want the allocation settled before any VM exists (D2, D14).
 
 These produce the scripts that later go into the image, and the result is the real manager cluster (single node, 0 workers: control plane schedulable, `metallb_ignore_exclude_lb: "true"`).
 
-**B1. Clone the `lab-manager` node from template 9100 with a script** (M) [manual run]
+**B1. Clone the `lab-manager` node from template 9100 with a script** (M) [manual run] **DONE**
 As the VM layer, I need an idempotent clone recipe.
 - Do: `hack/clone-talos-vm.sh` calling the Proxmox API/`qm` with the recipe from the design (net0 vmbr1/tag 10, ipconfig0, cores/mem, tags, data disk, start). Re-running with an existing VM ID is a no-op.
 - Needs: A3, A4.

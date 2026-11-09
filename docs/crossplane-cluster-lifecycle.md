@@ -101,7 +101,7 @@ Per-VM recipe, executed by an idempotent Job (skip if the VM ID already exists) 
 
 ```
 qm clone 9100 <vmid> --name <node-name> --full --target <pve-node> --storage <pool>
-qm set   <vmid> --net0 virtio,bridge=vmbr1,tag=10
+qm set   <vmid> --net0 virtio,bridge=vmbr1        # VLAN 10 is native on vmbr1: no tag
 qm set   <vmid> --ipconfig0 ip=<ip>/22,gw=192.168.10.1 --nameserver <dns> --searchdomain ellin.net
 qm set   <vmid> --cores <n> --memory <mib> --tags talos,<cluster>
 qm resize <vmid> scsi0 <size>
