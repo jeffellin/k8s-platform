@@ -31,7 +31,8 @@ As the Job, I need least-privilege API access to `pve`.
 - Demo: successful `GET /nodes/pve/qemu/9100/config`. Records the exact permission set (closes an open item).
 - Result: token `talos-provisioner@pve!bootstrapper` (privsep) works. Role `TalosProvisioner` = `VM.Allocate VM.Clone VM.Audit VM.PowerMgmt VM.Config.{CPU,Memory,Disk,Network,Cloudinit,Options} Datastore.{AllocateSpace,Audit} SDN.Use`, granted on `/vms`, `/storage/local-lvm`, `/sdn/zones/localnetwork` to **both the user and the token** (privsep needs both). Reads of template 9100, local-lvm and bridges vmbr0/vmbr1 verified. Clone/write permissions are first exercised in B1. Token secret is in 1Password (to confirm).
 
-**A4. Reserve IP/ID and MetalLB range for `lab-manager`** (S)
+**A4. Reserve IP/ID and MetalLB range for `lab-manager`** (S) **DONE (rows added as PENDING, uncommitted in the `terraform` repo)**
+- Chosen: node `192.168.10.56` / VM ID `10056` / name `lab-manager` / Proxmox node `pve` / gateway `192.168.10.1` (/22); MetalLB `192.168.11.10-192.168.11.14`.
 As Jeff, I want the allocation settled before any VM exists (D2, D14).
 - Do: pick a node IP from the free VLAN 10 static range (e.g. `192.168.10.56` -> VM ID `10056`) and a MetalLB range (e.g. 5 addresses in `192.168.11.x`); add PENDING rows to `VLAN10-IP-ALLOCATION.md`.
 - Done when: doc updated. Demo: the diff.
@@ -73,6 +74,9 @@ As R1, I want the existing `bootstrap.sh` flow to work on this new cluster.
 - Needs: B3.
 - Done when: Flux syncs; core apps and the hello app Ready on `lab-manager`; the LoadBalancer IP answers.
 - Demo: `kubectl get kustomization -A` on `lab-manager` and `curl https://hello-manager.ellin.net`. (This is also the regression test that R1 still works.)
+
+**A5. (Optional) Fix `vmbr1` netmask on `pve`** (S) [manual]
+VLAN 10 is `/22`; `pve` has `vmbr1` at `192.168.8.2/24`. Change to `/22` in `/etc/network/interfaces`, `ifreload -a` (from the 192.168.1.52 session). Demo: `ip -br addr show vmbr1` shows `/22`; ping from `pve` to a VLAN 10 VM works.
 
 **B6. Teardown script, tested on a throwaway VM** (S)
 - Do: `hack/talos-destroy.sh <name>` (stop + purge VMs, remove local kubeconfig/secrets); test it on a disposable clone, **never on `lab-manager`**; update allocation rows.
