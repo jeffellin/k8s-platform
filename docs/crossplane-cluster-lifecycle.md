@@ -12,11 +12,11 @@ Related docs: `docs/SingleNodeKubernetesonProxmox.md` (manual procedure this pla
 Add a Kubernetes cluster with **one commit**: VMs cloned to the homelab standards, Talos installed and bootstrapped,
 platform layer (Flux Operator + this repo's apps) running on it.
 
-- **R1** The existing path (`hack/new-cluster.sh` -> `render.py` -> `bootstrap/bootstrap.sh`) keeps working for clusters not built by Crossplane (kubeadm, hand-built Talos, the manager itself).
+- **R1** The existing path (`hack/new-sops-cluster.sh` -> `render.py` -> `bootstrap/bootstrap.sh`) keeps working for clusters not built by Crossplane (kubeadm, hand-built Talos, the manager itself).
 - **R2** Topology is `1 control plane + N workers`, `N >= 0`.
   - `N > 0`: normal scheduling (control plane tainted, MetalLB excludes it).
   - `N == 0`: workloads may run on the control plane **and** MetalLB announces from it.
-- **R3** A new **single-node cluster named `lab-manager`** (on VLAN 10, built first with the scripted/legacy path, D14) becomes the **manager** that runs Crossplane. The existing `talos-test` cluster (VM 155, 192.168.1.155, Talos cluster name `homelab`) is the learning cluster and is retired from the manager role.
+- **R3** A new **single-node cluster named `lab-manager`** (on VLAN 10, built first with the scripted SOPS path, D14) becomes the **manager** that runs Crossplane. The existing `talos-test` cluster (VM 155, 192.168.1.155, Talos cluster name `homelab`) is the learning cluster and is retired from the manager role.
 
 ## 2. Decisions
 
@@ -28,14 +28,14 @@ platform layer (Flux Operator + this repo's apps) running on it.
 | D4 | Talos VMs are **not** built with `terraform/modules/linux-vm`. They are full clones of Proxmox **template 9100** (`talos-v1.14.5`, Image Factory nocloud). **Assume 9100 exists**; template upgrades are handled later. |
 | D5 | Proxmox host settings (endpoint, credentials ref, node/storage, bridge, template per Talos version) live in one reusable environment object, not per cluster. Implemented as a Crossplane **`EnvironmentConfig`** (no new CRD). |
 | D6 | **Crossplane v2** with composition functions (pipeline mode) is the approach, not Cluster API (see section 11). Upjet contacts exist, so a native Proxmox provider is a possible later replacement for the Job-based VM layer. |
-| D7 | Secrets use **P1**: the manager holds the AWS credentials in a **plain Secret** (seeded from 1Password by `hack/seed-secrets.sh`); the bootstrap Job writes them into each new cluster. SOPS stays for legacy clusters. External Secrets may replace the plain Secret later without changing the Job. |
+| D7 | Secrets use **P1**: the manager holds the AWS credentials in a **plain Secret** (seeded from 1Password by `hack/seed-secrets.sh`); the bootstrap Job writes them into each new cluster. SOPS stays for SOPS-managed clusters. External Secrets may replace the plain Secret later without changing the Job. |
 | D8 | Start with Proxmox node **`pve`** only. `pve2` templates/placement later. |
 | D9 | **Single control plane** now. Keep the spec shaped so a list of control planes (HA + VIP) can replace it later. |
 | D10 | Bootstrapper image: Docker Hub **`ellinj/talos-automation`** (renamed from `jeffellin/talosbootstraper` on 2026-11-09). Build method (likely GitHub Actions in this repo) still to decide. |
 | D11 | Networking: Proxmox hosts have two NICs (192.168.1.x `vmbr0`, 192.168.8.x `vmbr1`/VLAN 10), all VLANs route to each other, and VLAN 10 can reach everything it needs (Image Factory, registries, GitHub). Manager uses the 1.x API address by default. |
 | D12 | `XR` is **namespaced** (Crossplane v2: no claims). Kubeconfig/talosconfig Secrets are emitted explicitly by the composition. |
 | D13 | Changes that affect an existing running cluster (e.g. `talos-test`) are built on a branch and **merged to `main` only on Jeff's go-ahead**. Adding the new `lab-manager` entry does not touch `talos-test`. |
-| D14 | The manager is a **new single-node cluster `lab-manager`** on VLAN 10 (IP/ID from `VLAN10-IP-ALLOCATION.md`), built first by hand-scripted steps and the legacy `bootstrap.sh` path (R1) **before any Crossplane work**. Crossplane is then installed on `lab-manager`, not on `talos-test`. `talos-test` is decommissioned (or kept as a scratch cluster) once `lab-manager` is proven. Its Talos cluster name is `lab-manager`, so there is no kubeconfig context collision with `homelab`. |
+| D14 | The manager is a **new single-node cluster `lab-manager`** on VLAN 10 (IP/ID from `VLAN10-IP-ALLOCATION.md`), built first by hand-scripted steps and the SOPS `bootstrap.sh` path (R1) **before any Crossplane work**. Crossplane is then installed on `lab-manager`, not on `talos-test`. `talos-test` is decommissioned (or kept as a scratch cluster) once `lab-manager` is proven. Its Talos cluster name is `lab-manager`, so there is no kubeconfig context collision with `homelab`. |
 | D15 | **Teardown is two explicit steps** (decided 2026-11-09): (1) annotate the XR `platform.ellin.net/teardown: "true"`, which makes the composition render one `teardown-<name>` Job that destroys the VMs and the manager-side Secrets and sets `phase: TornDown`; (2) `kubectl delete`, which a ValidatingAdmissionPolicy only allows once `phase` is `TornDown` (or with an explicit `allow-delete: "keep-vms"`). Deleting an XR alone never destroys VMs. A finalizer-based controller that makes one delete do everything is a later option (backlog F9). See section 8.1. |
 
 ## 3. Current state (for context)
@@ -139,10 +139,10 @@ Before building the Job, smoke-test `nc -zv <vlan10-ip> 50000` from a manager po
 The final Job runs the repo's own `bootstrap/bootstrap.sh` logic against the new cluster's kubeconfig (one code path for manual and
 Crossplane routes). Secrets (P1, D7):
 - The Job generates the cluster age key, keeps the private key on the manager, installs it as `flux-system/sops-age` in the new cluster, and publishes the public key in XR status.
-- The AWS credentials for cert-manager and external-dns come from the manager's plain Secret and are created directly in the new cluster; no SOPS files are required for them. Apps whose `meta.yaml` declares `secrets:` need a corresponding manager-side source (or stay on SOPS for legacy clusters).
-- Legacy clusters keep `new-cluster.sh` + SOPS unchanged.
+- The AWS credentials for cert-manager and external-dns come from the manager's plain Secret and are created directly in the new cluster; no SOPS files are required for them. Apps whose `meta.yaml` declares `secrets:` need a corresponding manager-side source (or stay on SOPS for SOPS-managed clusters).
+- SOPS-managed clusters keep `new-sops-cluster.sh` + SOPS unchanged.
 
-Phase-1 wiring: the one commit contains the XR, a `clusters.yaml` entry (with `metallb_ignore_exclude_lb` set from the worker count), regenerated `clusters/<name>/`, and allocation-doc rows. A `hack/new-talos-cluster.sh <name> --workers N` can scaffold these. Later, make `spec.platform.apps` the source and generate `clusters/<name>/` from the XR, shrinking `clusters.yaml` to legacy clusters. (Note: with P1, `render.py`'s "missing secret" check must not require SOPS files for apps whose credentials come from the manager -- needs a design tweak when implemented.)
+Phase-1 wiring: the one commit contains the XR, a `clusters.yaml` entry (with `metallb_ignore_exclude_lb` set from the worker count), regenerated `clusters/<name>/`, and allocation-doc rows. A `hack/new-talos-cluster.sh <name> --workers N` can scaffold these. Later, make `spec.platform.apps` the source and generate `clusters/<name>/` from the XR, shrinking `clusters.yaml` to SOPS-managed clusters. (Note: with P1, `render.py`'s "missing secret" check must not require SOPS files for apps whose credentials come from the manager -- needs a design tweak when implemented.)
 
 ## 6. Proxmox environment (`EnvironmentConfig`)
 
@@ -216,7 +216,7 @@ kubectl delete taloscluster <name>                                      # step 2
 
 ## 10. Risks
 
-- The manager is a single point of failure for *changes* (not for running clusters), runs on one VM, and must stay rebuildable through the legacy path (R1). Keep etcd snapshots and `secrets.yaml` backed up; do not let it become the sole holder of other clusters' secrets without backups (D7 puts AWS creds and age keys there).
+- The manager is a single point of failure for *changes* (not for running clusters), runs on one VM, and must stay rebuildable through the SOPS path (R1). Keep etcd snapshots and `secrets.yaml` backed up; do not let it become the sole holder of other clusters' secrets without backups (D7 puts AWS creds and age keys there).
 - Plain-Secret credentials live in the manager's etcd: protect/back up accordingly.
 - Loss of a cluster's Talos secrets bundle = no admin access; hence the 1Password backup step.
 - Template drift: never edit templates in place; one template number per Talos version.
@@ -243,12 +243,12 @@ Revisit CAPI only if HA control planes with automated rolling replacement become
 ## 12. Phased plan
 
 0. Done: decisions D1-D14; backups of `homelab` Talos secrets and etcd; template 9100 assumed present.
-0b. **Build `lab-manager`** (single node, VLAN 10) with scripts + the legacy bootstrap path; verify core apps and `hello-nginx`-style cert/DNS work there. See backlog epics A-B.
+0b. **Build `lab-manager`** (single node, VLAN 10) with scripts + the SOPS bootstrap path; verify core apps and `hello-nginx`-style cert/DNS work there. See backlog epics A-B.
 1. **Crossplane on `lab-manager`** (branch, merge on go-ahead): `apps/crossplane`, functions, provider-kubernetes, `EnvironmentConfig` for `homelab`, Proxmox API token Secret; `nc -zv` smoke test to VLAN 10 on 50000/6443 from a manager pod.
 2. **Image:** build and publish `ellinj/talos-automation` (with `bootstrap.sh`); test by hand against a throwaway VM; decide the build pipeline.
 3. **XRD + composition, VM layer only:** create/destroy a 1-node cluster's VMs; test the N -> 0 CEL rule.
 4. **Talos layer:** end-to-end 1 control plane, 0 workers (taint removed, `ignoreExcludeLB` true), matching `lab-manager`.
-5. **Platform layer (P1):** age key, AWS credentials from the manager Secret, `bootstrap.sh` logic; legacy path unchanged; adjust `render.py` for manager-supplied secrets.
+5. **Platform layer (P1):** age key, AWS credentials from the manager Secret, `bootstrap.sh` logic; SOPS path unchanged; adjust `render.py` for manager-supplied secrets.
 6. **Workers N > 0**, scale up/down, upgrades, deletion protection.
 7. **Collapse `clusters.yaml` into the XR**; optional CI allocation lint.
 

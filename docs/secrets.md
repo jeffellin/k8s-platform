@@ -9,7 +9,7 @@ Each secret is encrypted to admin + its cluster only. `.sops.yaml` is GENERATED 
 
 ## New cluster: one pass, in this order
 1. Add the cluster + its apps to `clusters.yaml` (all apps, including those needing secrets).
-2. `hack/new-cluster.sh <cluster>` -- creates admin/cluster age keys (if missing), writes `keys/*.pub`, and drops
+2. `hack/new-sops-cluster.sh <cluster>` -- creates admin/cluster age keys (if missing), writes `keys/*.pub`, and drops
    `clusters/<cluster>/secrets/<app>/*.example.yaml` skeletons for every app that declares `secrets:` in its `meta.yaml`.
 3. For each skeleton: `cp x.example.yaml x.sops.yaml`, fill in, `sops --encrypt --in-place x.sops.yaml`.
 4. `hack/render.py` -- fails (listing what's wrong) if a declared secret is missing or not encrypted; otherwise

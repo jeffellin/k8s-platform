@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Create the age keys + secret skeletons for a cluster BEFORE it exists/is bootstrapped.
-# Usage: hack/new-cluster.sh <cluster>      (cluster must already be listed in clusters.yaml)
+# SOPS path: create the age keys + secret skeletons for a cluster BEFORE it exists/is bootstrapped.
+# For clusters whose secrets are SOPS files in Git (lab-manager, talos-test). Crossplane-built clusters
+# (secrets: manager) use hack/new-talos-cluster.sh instead and need no keys.
+# Usage: hack/new-sops-cluster.sh <cluster>      (cluster must already be listed in clusters.yaml)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 C="${1:?usage: $0 <cluster>}"

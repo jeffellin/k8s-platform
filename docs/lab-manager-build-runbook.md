@@ -1,6 +1,6 @@
 # Runbook: build `lab-manager` from scratch
 
-`lab-manager` (192.168.10.56, VM 10056, VLAN 10) is the Crossplane manager: Flux, the legacy platform apps, Crossplane, and the Secrets that let it build other
+`lab-manager` (192.168.10.56, VM 10056, VLAN 10) is the Crossplane manager: Flux, the platform apps, Crossplane, and the Secrets that let it build other
 clusters. This runbook builds one **from nothing** (Part A: the Talos node) and then turns the bare Kubernetes cluster, the "dial tone", into the manager
 (Part B). It is the path that was used to build the current `lab-manager`, written down in order. Cluster create/update/delete for the clusters it manages:
 `docs/talos-cluster-runbook.md`.
@@ -21,7 +21,7 @@ clusters. This runbook builds one **from nothing** (Part A: the Talos node) and 
 - 1Password items: `op://HomeLab/r53-aws` (Route53 keys: `access key id`, `secret access key`) and the Proxmox token secret.
 - Docker Hub image `ellinj/talos-automation:dev` pushed (the Jobs use it); the Docker Hub workflow only runs from `main` with repo secrets set (backlog C2).
 - Git layout: the Talos scripts (`hack/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`) are in the **plan-branch checkout**
-  `~/homelab/k8s-platform`; everything meant for `main` (`bootstrap/`, `clusters.yaml`, `hack/render.py`, `hack/new-cluster.sh`, `hack/seed-secrets.sh`) is done in the
+  `~/homelab/k8s-platform`; everything meant for `main` (`bootstrap/`, `clusters.yaml`, `hack/render.py`, `hack/new-sops-cluster.sh`, `hack/seed-secrets.sh`) is done in the
   worktree `~/homelab/k8s-platform-main`.
 
 ## A. Build the Talos node (the dial tone)
@@ -50,7 +50,7 @@ Run these from the worktree `~/homelab/k8s-platform-main` on a branch off `origi
 
 ### 1. Cluster entry (skip if `lab-manager` is already in `clusters.yaml`, which it is today)
 
-`lab-manager` is a legacy SOPS cluster: it has an entry in `clusters.yaml` with `metallb_ignore_exclude_lb: "true"` (single node), its MetalLB range, and the apps
+`lab-manager` is a SOPS-managed cluster: it has an entry in `clusters.yaml` with `metallb_ignore_exclude_lb: "true"` (single node), its MetalLB range, and the apps
 it runs (the platform apps plus the Crossplane apps and `talos-clusters`). For a new name, follow `docs/secrets.md` and `hack/new-talos-cluster.sh`'s entry as a model.
 
 ### 2. Age keys and the SOPS secrets
@@ -59,7 +59,7 @@ The manager's own AWS credentials (cert-manager, external-dns) are SOPS files in
 node needs a key pair:
 
 ```bash
-hack/new-cluster.sh lab-manager        # creates ~/.config/sops/age/lab-manager.agekey if missing, writes keys/lab-manager.pub, drops secret skeletons
+hack/new-sops-cluster.sh lab-manager        # creates ~/.config/sops/age/lab-manager.agekey if missing, writes keys/lab-manager.pub, drops secret skeletons
 hack/seed-secrets.sh lab-manager       # builds + encrypts the AWS Secrets from 1Password (op://HomeLab/r53-aws), nothing plaintext on disk
 hack/render.py                         # writes clusters/lab-manager/ and .sops.yaml; fails and says what is missing/unencrypted
 git add -A && git commit && git push   # then PR and merge
