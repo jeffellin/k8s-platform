@@ -73,14 +73,12 @@ clusters:
       - name: hello-nginx
         options:
           hello_host: hello-e2test.ellin.net
-  e2scale:                          # E5 test cluster: starts single node (192.168.10.66), worker .67 added later
+  e2scale:                          # E5 test cluster: built single node (192.168.10.66), worker .67 added afterwards (0 -> 1)
     secrets: manager
     vars:
       external_dns_txt_id: e2scale
     apps:
-      - name: metallb
-        options:
-          metallb_ignore_exclude_lb: "true"   # 0 workers: control plane must serve LB IPs; flip to false (remove) when the worker joins
+      - name: metallb               # has a worker now: default ignoreExcludeLB=false (set "true" only while workers == 0)
       - name: metallb-config
         options:
           metal_lb_address_pool: 192.168.11.30-192.168.11.39
