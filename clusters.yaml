@@ -54,3 +54,4 @@ clusters:
       - name: crossplane-config   # functions + provider-kubernetes
       - name: crossplane-providerconfig   # ClusterProviderConfig (needs the provider's CRDs)
       - name: crossplane-environment      # EnvironmentConfig `homelab` (Proxmox settings for TalosCluster)
+      - name: crossplane-api               # TalosCluster XRD + composition

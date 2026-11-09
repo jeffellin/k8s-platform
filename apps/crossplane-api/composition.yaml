@@ -1,0 +1,42 @@
+# E1: no-op composition. Reads EnvironmentConfig and reports derived values in status; creates nothing.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: talosclusters.platform.ellin.net
+spec:
+  compositeTypeRef: {apiVersion: platform.ellin.net/v1alpha1, kind: TalosCluster}
+  mode: Pipeline
+  pipeline:
+  - step: environment
+    functionRef: {name: function-environment-configs}
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+        - type: Reference
+          ref: {name: homelab}
+  - step: render-status
+    functionRef: {name: function-go-templating}
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{- $xr := .observed.composite.resource -}}
+          {{- $env := index .context "apiextensions.crossplane.io/environment" -}}
+          {{- $cp := $xr.spec.network.controlPlaneIP | splitList "." -}}
+          ---
+          apiVersion: platform.ellin.net/v1alpha1
+          kind: TalosCluster
+          status:
+            phase: Planned
+            controlPlane:
+              name: {{ $xr.metadata.name }}-cp-1
+              vmid: {{ printf "%d%03d" (index $cp 2 | atoi) (index $cp 3 | atoi) }}
+            workerCount: {{ $xr.spec.workers.count }}
+            proxmoxEndpoint: {{ $env.proxmox.endpoint }}
+            metallbIgnoreExcludeLB: {{ eq (int $xr.spec.workers.count) 0 }}
+  - step: ready
+    functionRef: {name: function-auto-ready}
