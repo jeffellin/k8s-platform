@@ -110,7 +110,7 @@ Notes:
 - **Template per Talos version/node:** the guide builds a new template (e.g. 9101) per Talos version for *new* nodes; existing nodes upgrade in place. So the environment object maps `(proxmox node, talosVersion) -> templateVmId`, and a template must exist on (or be reachable from) each target node.
 - **Zero-touch option** (guide, Step 3): machine config can be delivered as cloud-init user-data via a `cicustom` snippet, skipping `apply-config`. It contains the cluster secrets and requires snippet files on the Proxmox host (SSH/`scp`, not the REST API -- **VERIFY**). Default to `apply-config --insecure` over the network; consider snippets later.
 - Proxmox API token needs roughly `VM.Clone`, `VM.Config.*`, `VM.PowerMgmt`, `VM.Allocate`, `Datastore.AllocateSpace`, `SDN.Use` on `vmbr1` -- **VERIFY** exact set.
-- Address mismatch to resolve: the guide says the Proxmox host is `192.168.1.52` (vmbr0), while `VLAN10-IP-ALLOCATION.md` lists `pve` at `192.168.8.2` (vmbr1). Presumably the same host with two addresses; the environment object should say which one the manager uses for the API.
+- Proxmox hosts have two NICs: one on 192.168.1.x (vmbr0) and one on 192.168.8.x / VLAN 10 (vmbr1), e.g. `pve` = `192.168.1.52` and `192.168.8.2`. Either address reaches the API; the environment object picks one (default the 1.x address, which the manager is on).
 
 Mechanism options (no linux-vm module): the clone recipe is a handful of Proxmox API calls, so I still lean to **a Job in the bootstrapper image** (idempotent: skip if VM ID exists). A small Terraform module via provider-terraform or an Upjet provider remain alternatives.
 
@@ -130,7 +130,7 @@ jq/yq, sops, age, flux CLI, `bootstrap.sh`). Run as a Job, or init containers of
 6. `kubeconfig`: write `<name>-kubeconfig` and `<name>-talosconfig` Secrets in the manager (also what provider-kubernetes/helm consume).
 
 The manual talosctl runs happened from `homelab-3-vm-01` (Ubuntu, VLAN 10 side) because the Mac was blocked by macOS Local Network privacy. The Job pod needs the same
-reach: **manager pod -> node IP on 50000 and 6443**. `talos-test` is on 192.168.1.0/24; new clusters are on VLAN 10. VERIFY routing/firewall early (open question 5).
+reach: **manager pod -> node IP on 50000 and 6443**. `talos-test` is on 192.168.1.0/24; new clusters are on VLAN 10. Assumption (confirmed): all VLANs/subnets can route to each other, so no extra network work is needed; still smoke-test `nc -zv <vlan10-ip> 50000` from a manager pod before building the Job.
 
 ### 3. Platform layer (R1 lives here)
 
@@ -170,7 +170,7 @@ apiVersion: platform.ellin.net/v1alpha1
 kind: ProxmoxEnvironment
 metadata: {name: homelab}
 spec:
-  endpoint: https://192.168.1.52:8006/api2/json      # per the guide; allocation doc lists pve at 192.168.8.2 -- confirm
+  endpoint: https://192.168.1.52:8006/api2/json      # pve has a second NIC at 192.168.8.2 (VLAN 10); either works
   credentialsSecretRef: {namespace: crossplane-system, name: proxmox-api}   # API token, never inline
   insecureTLS: false
   network: {bridge: vmbr1, vlan: 10, gateway: 192.168.10.1}
@@ -246,7 +246,7 @@ maturity of CAPMOX. Crossplane's advantages are one tool for everything and reus
 1. Crossplane vs CAPI (above)? With 9100 cloning and N->0 forbidden, CAPI's advantages shrink somewhat but scaling/upgrades remain the draw.
 2. VM mechanism: Job calling the Proxmox API (C, leaning) vs a small `talos-vm` Terraform module (A)?
 3. Secrets: P1 (manager supplies), P2 (shared key), or P3 (pre-generated key)?
-4. Does `pve2` need its own template (no shared storage), and do you want CP/workers spread across nodes? `ProxmoxEnvironment` as a new CRD or a Crossplane `EnvironmentConfig`? Which address does the manager use for the Proxmox API (192.168.1.52 vs 192.168.8.2)?
-5. Can the manager (192.168.1.0/24) reach VLAN 10 node IPs on 50000/6443, and can Talos nodes reach GitHub/registries?
+4. Does `pve2` need its own template (no shared storage), and do you want CP/workers spread across nodes? `ProxmoxEnvironment` as a new CRD or a Crossplane `EnvironmentConfig`?
+5. ~~Manager reach to VLAN 10~~ resolved: all networks route to each other. Remaining: can Talos nodes reach GitHub and `factory.talos.dev`/registries for installs and upgrades?
 6. Is a control-plane VIP needed later (HA = more CPs)? The spec says 1 CP; keep a path to 3 open?
 7. Where should the bootstrapper image live (ghcr.io/jeffellin, Gitea registry) and how is it built (Gitea Actions / GitHub Actions)?
