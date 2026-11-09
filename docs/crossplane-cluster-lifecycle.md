@@ -16,7 +16,7 @@ platform layer (Flux Operator + this repo's apps) running on it.
 - **R2** Topology is `1 control plane + N workers`, `N >= 0`.
   - `N > 0`: normal scheduling (control plane tainted, MetalLB excludes it).
   - `N == 0`: workloads may run on the control plane **and** MetalLB announces from it.
-- **R3** The existing `talos-test` cluster (VM 155, 192.168.1.155, Talos cluster name `homelab`) is the **manager** that runs Crossplane.
+- **R3** A new **single-node cluster named `lab-manager`** (on VLAN 10, built first with the scripted/legacy path, D14) becomes the **manager** that runs Crossplane. The existing `talos-test` cluster (VM 155, 192.168.1.155, Talos cluster name `homelab`) is the learning cluster and is retired from the manager role.
 
 ## 2. Decisions
 
@@ -34,15 +34,16 @@ platform layer (Flux Operator + this repo's apps) running on it.
 | D10 | Bootstrapper image: Docker Hub **`jeffellin/talosbootstraper`** (spelling as given). Build method (likely GitHub Actions in this repo) still to decide. |
 | D11 | Networking: Proxmox hosts have two NICs (192.168.1.x `vmbr0`, 192.168.8.x `vmbr1`/VLAN 10), all VLANs route to each other, and VLAN 10 can reach everything it needs (Image Factory, registries, GitHub). Manager uses the 1.x API address by default. |
 | D12 | `XR` is **namespaced** (Crossplane v2: no claims). Kubeconfig/talosconfig Secrets are emitted explicitly by the composition. |
-| D13 | Phase 1 changes the live manager through Flux, so it is built on a branch and **merged to `main` only on Jeff's go-ahead**. |
+| D13 | Changes that affect an existing running cluster (e.g. `talos-test`) are built on a branch and **merged to `main` only on Jeff's go-ahead**. Adding the new `lab-manager` entry does not touch `talos-test`. |
+| D14 | The manager is a **new single-node cluster `lab-manager`** on VLAN 10 (IP/ID from `VLAN10-IP-ALLOCATION.md`), built first by hand-scripted steps and the legacy `bootstrap.sh` path (R1) **before any Crossplane work**. Crossplane is then installed on `lab-manager`, not on `talos-test`. `talos-test` is decommissioned (or kept as a scratch cluster) once `lab-manager` is proven. Its Talos cluster name is `lab-manager`, so there is no kubeconfig context collision with `homelab`. |
 
 ## 3. Current state (for context)
 
-- Manager `talos-test`: Talos v1.14.5, K8s v1.37.1, Flux Operator + Flux v2.10.0, apps from `clusters.yaml`: metallb, metallb-config, local-path-provisioner, metrics-server, contour, cert-manager, cluster-issuers, external-dns, hello-nginx (demo).
+- Learning cluster `talos-test` (to be replaced as manager by `lab-manager`, D14): Talos v1.14.5, K8s v1.37.1, Flux Operator + Flux v2.10.0, apps from `clusters.yaml`: metallb, metallb-config, local-path-provisioner, metrics-server, contour, cert-manager, cluster-issuers, external-dns, hello-nginx (demo).
 - MetalLB option `metallb_ignore_exclude_lb` (default `false`; `"true"` on `talos-test`) already exists (commit f9844a3) and is the hook for R2.
 - `hello.ellin.net` works end to end (Let's Encrypt cert via DNS-01, external-dns record).
 - `secrets.yaml` and a first etcd snapshot of `homelab` are backed up (per Jeff).
-- Nothing Crossplane-related is installed or committed except these docs and `hack/build-talos-template.sh`.
+- `lab-manager` does not exist yet. Nothing Crossplane-related is installed or committed except these docs and `hack/build-talos-template.sh`.
 
 ## 4. Architecture
 
@@ -109,7 +110,7 @@ qm start <vmid>
 ```
 
 Notes:
-- VM name = hostname (cloud-init). Cluster names must be unique (the manager's Talos cluster is already named `homelab`; avoid kubeconfig context collisions).
+- VM name = hostname (cloud-init). Cluster names must be unique (the learning cluster's Talos cluster is already named `homelab`; avoid kubeconfig context collisions).
 - **Data disk:** the repo's `local-path-provisioner` app needs `/var/mnt/local-path-provisioner`, which exists only with a second disk plus `UserVolumeConfig` named `local-path-provisioner`. `dataDiskGiB` default 50 (as on `talos-01`).
 - **Templates:** a new template number per Talos version (9101...) for new nodes; existing nodes upgrade in place. The environment maps `(node, talosVersion) -> templateVmId`.
 - **Zero-touch option:** machine config could be delivered as cloud-init user-data via a `cicustom` snippet (needs snippet files on the Proxmox host over SSH; contains secrets). Not used initially; default is `apply-config --insecure` over the network.
@@ -179,7 +180,7 @@ Phase-1 form: XR file in `management/clusters/` + `clusters.yaml` entry + regene
 
 - Crossplane v2 (namespaced XRs, no claims, patch-and-transform deprecated): **composition functions in pipeline mode** (function-go-templating or function-kcl; pick during phase 3), `function-environment-configs`, provider-kubernetes (resources inside new clusters) and, if useful, provider-helm.
 - Jobs are created by the composition (provider-kubernetes `Object`s or direct composed Jobs on the manager).
-- Installed as apps in this repo (`apps/crossplane`, `apps/crossplane-config`), enabled for `talos-test` in `clusters.yaml`; XRD/Composition/XRs live under `management/` and are synced by a second Flux Kustomization on the manager only.
+- Installed as apps in this repo (`apps/crossplane`, `apps/crossplane-config`), enabled for **`lab-manager`** in `clusters.yaml`; XRD/Composition/XRs live under `management/` and are synced by a second Flux Kustomization on the manager only.
 
 ## 10. Risks
 
@@ -209,11 +210,12 @@ Revisit CAPI only if HA control planes with automated rolling replacement become
 
 ## 12. Phased plan
 
-0. Done: decisions D1-D13; backups of `homelab` Talos secrets and etcd; template 9100 assumed present.
-1. **Crossplane on the manager** (branch, merge on go-ahead, D13): `apps/crossplane`, functions, provider-kubernetes, `EnvironmentConfig` for `homelab`, Proxmox API token Secret; `nc -zv` smoke test to VLAN 10 on 50000/6443 from a manager pod.
+0. Done: decisions D1-D14; backups of `homelab` Talos secrets and etcd; template 9100 assumed present.
+0b. **Build `lab-manager`** (single node, VLAN 10) with scripts + the legacy bootstrap path; verify core apps and `hello-nginx`-style cert/DNS work there. See backlog epics A-B.
+1. **Crossplane on `lab-manager`** (branch, merge on go-ahead): `apps/crossplane`, functions, provider-kubernetes, `EnvironmentConfig` for `homelab`, Proxmox API token Secret; `nc -zv` smoke test to VLAN 10 on 50000/6443 from a manager pod.
 2. **Image:** build and publish `jeffellin/talosbootstraper` (with `bootstrap.sh`); test by hand against a throwaway VM; decide the build pipeline.
 3. **XRD + composition, VM layer only:** create/destroy a 1-node cluster's VMs; test the N -> 0 CEL rule.
-4. **Talos layer:** end-to-end 1 control plane, 0 workers (taint removed, `ignoreExcludeLB` true), matching `talos-test`.
+4. **Talos layer:** end-to-end 1 control plane, 0 workers (taint removed, `ignoreExcludeLB` true), matching `lab-manager`.
 5. **Platform layer (P1):** age key, AWS credentials from the manager Secret, `bootstrap.sh` logic; legacy path unchanged; adjust `render.py` for manager-supplied secrets.
 6. **Workers N > 0**, scale up/down, upgrades, deletion protection.
 7. **Collapse `clusters.yaml` into the XR**; optional CI allocation lint.

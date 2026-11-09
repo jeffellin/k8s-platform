@@ -1,8 +1,10 @@
 # Crossplane cluster lifecycle: backlog
 
-Companion to `docs/crossplane-cluster-lifecycle.md` (the design; decisions D1-D13 are referenced below).
+Companion to `docs/crossplane-cluster-lifecycle.md` (the design; decisions D1-D14 are referenced below).
+
+**Direction (D14):** first build a new single-node cluster **`lab-manager`** on VLAN 10 by scripts + the legacy bootstrap path, and make *it* the Crossplane manager. `talos-test` is untouched and retired later.
 Each story is small enough for one sitting, has a **demo** (what you can show when it's done), and leaves the
-manager healthy. Work them in order; "needs" lists hard dependencies. Anything touching the live manager is built on a branch
+manager healthy. Work them in order; "needs" lists hard dependencies. Anything touching an existing running cluster is built on a branch
 and merged to `main` only on Jeff's go-ahead (D13).
 
 Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox shell, 1Password, Docker Hub).
@@ -28,22 +30,22 @@ As the Job, I need least-privilege API access to `pve`.
 - Done when: `curl` with the token lists VMs and reads template 9100's config but cannot touch other things.
 - Demo: successful `GET /nodes/pve/qemu/9100/config`. Records the exact permission set (closes an open item).
 
-**A4. Reserve IPs/IDs for a test cluster** (S)
-As Jeff, I want a throwaway 1 CP + 1 worker allocation to test with (D2).
-- Do: pick two IPs from the free static range (e.g. `192.168.10.56-57`), add rows to `VLAN10-IP-ALLOCATION.md` (`10056`, `10057`) as PENDING.
+**A4. Reserve IP/ID and MetalLB range for `lab-manager`** (S)
+As Jeff, I want the allocation settled before any VM exists (D2, D14).
+- Do: pick a node IP from the free VLAN 10 static range (e.g. `192.168.10.56` -> VM ID `10056`) and a MetalLB range (e.g. 5 addresses in `192.168.11.x`); add PENDING rows to `VLAN10-IP-ALLOCATION.md`.
 - Done when: doc updated. Demo: the diff.
 
 ---
 
-## Epic B: Prove the Talos mechanics by hand-scripted steps (no Crossplane yet)
+## Epic B: Build `lab-manager` by hand-scripted steps (no Crossplane yet)
 
-These produce the scripts that later go into the image.
+These produce the scripts that later go into the image, and the result is the real manager cluster (single node, 0 workers: control plane schedulable, `metallb_ignore_exclude_lb: "true"`).
 
-**B1. Clone one node from template 9100 with a script** (M) [manual run]
+**B1. Clone the `lab-manager` node from template 9100 with a script** (M) [manual run]
 As the VM layer, I need an idempotent clone recipe.
 - Do: `hack/clone-talos-vm.sh` calling the Proxmox API/`qm` with the recipe from the design (net0 vmbr1/tag 10, ipconfig0, cores/mem, tags, data disk, start). Re-running with an existing VM ID is a no-op.
 - Needs: A3, A4.
-- Done when: VM 10056 boots and the Talos dashboard shows maintenance mode at 192.168.10.56; `nc -zv 192.168.10.56 50000` works from the manager pod (also closes A2's 50000 check).
+- Done when: VM 10056 (`lab-manager-cp-1` or just `lab-manager`) boots and the Talos dashboard shows maintenance mode at 192.168.10.56; `nc -zv 192.168.10.56 50000` works from the manager pod (also closes A2's 50000 check).
 - Demo: console screenshot + second run says "exists, skipping".
 
 **B2. Generate configs from a script** (M)
@@ -52,29 +54,28 @@ As the Talos layer, I need reproducible `secrets.yaml` and machine configs.
 - Done when: running twice with the same `secrets.yaml` yields identical configs; `--dry-run apply` accepts them (use `talosctl validate`).
 - Demo: `talosctl validate --config controlplane.yaml --mode cloud`, and a diff showing the taint present/absent by worker count.
 
-**B3. Bring up a 1-node cluster with scripts** (M)
-As Jeff, I want a second single-node Talos cluster built from the scripts, not by hand.
+**B3. Bring up `lab-manager` with scripts** (M)
+As Jeff, I want the new single-node Talos cluster built from the scripts, not by hand.
 - Do: `hack/talos-apply-bootstrap.sh`: wait for 50000, `apply-config --insecure`, `bootstrap` once, `health`, write kubeconfig.
 - Needs: B1, B2.
 - Done when: `kubectl get nodes` on the new cluster shows Ready with no taints; script re-run is safe (does not re-bootstrap).
 - Demo: `kubectl get nodes -o wide` for the new cluster.
 
-**B4. Add a worker with scripts** (M)
-- Do: clone worker VM 10057, apply `worker.yaml`; control plane becomes tainted again (regenerate without the `yq` step, apply, reboot, drain).
-- Needs: B3.
-- Done when: 2 nodes Ready; control plane has the NoSchedule taint; a test pod lands on the worker.
-- Demo: `kubectl get nodes` + pod placement.
+**B4. (Optional, can move to E5) Prove the worker path on a throwaway cluster** (M)
+`lab-manager` stays single-node, so test N > 0 with a disposable second cluster (reserve two more IPs) or defer it to Crossplane story E5.
+- Do: clone worker VM, apply `worker.yaml`; control plane becomes tainted again (regenerate without the `yq` step, apply, reboot, drain).
+- Done when: control plane has the NoSchedule taint and a test pod lands on the worker. Demo: `kubectl get nodes` + pod placement.
 
-**B5. Platform bootstrap on the scripted cluster (legacy path)** (M)
+**B5. Platform bootstrap on `lab-manager` (legacy path)** (M)
 As R1, I want the existing `bootstrap.sh` flow to work on this new cluster.
-- Do: `new-cluster.sh dev1`, add to `clusters.yaml`, `render.py`, encrypt secrets, `bootstrap.sh dev1`.
+- Do: `new-cluster.sh lab-manager`, add `lab-manager` to `clusters.yaml` (apps as `talos-test`, with `external_dns_txt_id: lab-manager`, its own MetalLB range, `metallb_ignore_exclude_lb: "true"`), `seed-secrets.sh`, `render.py`, `bootstrap.sh lab-manager`. Add `hello-nginx` with a different host (e.g. `hello-manager.ellin.net`) to verify cert + DNS.
 - Needs: B3.
-- Done when: Flux syncs; core apps Ready on dev1; MetalLB speaker runs on the right nodes for both worker counts (verify `ignoreExcludeLB` behaviour).
-- Demo: `kubectl get kustomization -A` on dev1. (This is also the regression test that R1 still works.)
+- Done when: Flux syncs; core apps and the hello app Ready on `lab-manager`; the LoadBalancer IP answers.
+- Demo: `kubectl get kustomization -A` on `lab-manager` and `curl https://hello-manager.ellin.net`. (This is also the regression test that R1 still works.)
 
-**B6. Tear down cleanly** (S)
-- Do: `hack/talos-destroy.sh <name>` (stop + purge VMs, remove kubeconfig/secrets locally); update allocation rows.
-- Done when: both VMs gone, IPs free again. Demo: `qm list` before/after.
+**B6. Teardown script, tested on a throwaway VM** (S)
+- Do: `hack/talos-destroy.sh <name>` (stop + purge VMs, remove local kubeconfig/secrets); test it on a disposable clone, **never on `lab-manager`**; update allocation rows.
+- Done when: the throwaway VM is gone and its IP is free. Demo: `qm list` before/after.
 
 ---
 
@@ -101,17 +102,17 @@ As the Jobs, I need one image with the tools.
 
 ## Epic D: Crossplane on the manager
 
-**D1. Install Crossplane (branch)** (M)
-- Do: `apps/crossplane` (Helm), enabled for `talos-test` on a branch; check CRDs, pods.
-- Done when: Flux applies it on the branch cluster sync (Jeff merges); `kubectl get pods -n crossplane-system` healthy; nothing else regresses.
-- Demo: `kubectl get crossplane`/pods + all existing Kustomizations still Ready.
+**D1. Install Crossplane on `lab-manager`** (M)
+- Do: `apps/crossplane` (Helm), enabled for `lab-manager` in `clusters.yaml` on a branch; `talos-test` is not touched.
+- Done when: Flux applies it after merge; `kubectl get pods -n crossplane-system` healthy on `lab-manager`; its other Kustomizations still Ready.
+- Demo: pods + Kustomizations on `lab-manager`.
 
 **D2. Install functions + provider-kubernetes** (S)
 - Do: `apps/crossplane-config`: `function-go-templating` (or KCL), `function-environment-configs`, `function-auto-ready`, provider-kubernetes with a ProviderConfig for the local cluster.
 - Done when: packages report Healthy. Demo: `kubectl get functions,providers`.
 
 **D3. The `EnvironmentConfig` + credentials Secrets** (S) [manual: secrets]
-- Do: `EnvironmentConfig homelab` (endpoint, nodes, templates, network); seed `proxmox-api` token Secret and the AWS credentials Secret on the manager via an extended `hack/seed-secrets.sh` from 1Password.
+- Do: `EnvironmentConfig homelab` (endpoint, nodes, templates, network); seed `proxmox-api` token Secret and the AWS credentials Secret on `lab-manager` via an extended `hack/seed-secrets.sh` from 1Password.
 - Done when: both exist; no secret values in git. Demo: `kubectl get environmentconfig homelab -o yaml` and Secret key names.
 
 ---
@@ -152,8 +153,9 @@ As the Jobs, I need one image with the tools.
 **F2. Upgrades** (M): `talosVersion` bump triggers `talosctl upgrade` node by node (etcd snapshot first). Demo: v1.14.5 -> next patch on a test cluster.
 **F3. Deletion protection and teardown** (S): `allow-delete` annotation required; delete removes VMs, frees IPs (manual allocation-doc update reminder). Demo: delete attempt blocked then allowed.
 **F4. `hack/new-talos-cluster.sh`** (S): scaffolds XR + `clusters.yaml` entry + allocation rows. Demo: scaffold output for a new cluster name.
+**F7. Retire `talos-test` as manager** (S): once E4 works on `lab-manager`, remove `talos-test` from `clusters.yaml` (or keep as a scratch cluster), stop external-dns there, release VM 155 / 192.168.1.155 in `IP-ALLOCATION.md`. Demo: allocation diff.
 **F5. Collapse `clusters.yaml` into the XR / `render.py` tweak for manager-supplied secrets** (M): see design section 5.3. Demo: render passes for an XR-built cluster with no SOPS files for AWS creds.
-**F6. Backups of the manager** (S): scheduled etcd snapshot of the manager; Talos secrets Secret backed up to 1Password. Demo: a snapshot file and a 1Password item.
+**F6. Backups of `lab-manager`** (S): scheduled etcd snapshot of the manager; Talos secrets Secret backed up to 1Password. Demo: a snapshot file and a 1Password item.
 
 ---
 
@@ -161,4 +163,4 @@ As the Jobs, I need one image with the tools.
 
 A1 -> A3 -> A4 -> B1 -> B2 -> B3. Outcome: a second single-node Talos cluster on VLAN 10 built entirely from scripts, with
 no Crossplane involved yet. This validates the clone recipe, the 1.14 config patch and the taint handling, which are the riskiest assumptions.
-Then B4, B5, C1-C3 for the "one Job builds a cluster" milestone before touching the live manager in Epic D.
+Then C1-C3 for the "one Job builds a cluster" milestone (build a throwaway cluster, not `lab-manager`), then Epic D on `lab-manager`.
