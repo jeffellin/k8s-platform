@@ -57,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl jq git age netcat-openbsd openssl python3 python3-yaml \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=tools /dl/talosctl /dl/kubectl /dl/yq /dl/sops /dl/flux /usr/local/bin/
-COPY hack/clone-talos-vm.sh hack/talos-gen-config.sh hack/talos-apply-bootstrap.sh hack/talos-apply-worker.sh /usr/local/bin/
+COPY hack/clone-talos-vm.sh hack/talos-gen-config.sh hack/talos-apply-bootstrap.sh hack/talos-apply-worker.sh hack/cluster-up.sh /usr/local/bin/
 RUN useradd --uid 10001 --create-home --shell /bin/bash bootstrapper \
  && mkdir /work && chown bootstrapper /work \
  && talosctl version --client >/dev/null && kubectl version --client >/dev/null \

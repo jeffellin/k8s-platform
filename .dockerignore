@@ -4,3 +4,4 @@
 !hack/talos-gen-config.sh
 !hack/talos-apply-bootstrap.sh
 !hack/talos-apply-worker.sh
+!hack/cluster-up.sh
