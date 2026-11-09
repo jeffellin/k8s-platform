@@ -31,3 +31,22 @@ clusters:
       - name: hello-nginx
         options:
           hello_host: hello.ellin.net
+  lab-manager:                      # single-node Talos VM 10056 (192.168.10.56, VLAN 10); the Crossplane manager
+    vars:
+      external_dns_txt_id: lab-manager
+    apps:
+      - name: metallb
+        options:
+          metallb_ignore_exclude_lb: "true"   # single node: the control plane must serve LoadBalancer IPs
+      - name: metallb-config
+        options:
+          metal_lb_address_pool: 192.168.11.10-192.168.11.14
+      - name: local-path-provisioner
+      - name: metrics-server
+      - name: contour
+      - name: cert-manager        # needs secrets/cert-manager/aws-credentials.sops.yaml
+      - name: cluster-issuers
+      - name: external-dns        # needs secrets/external-dns/aws-credentials.sops.yaml
+      - name: hello-nginx
+        options:
+          hello_host: hello-manager.ellin.net
