@@ -1,4 +1,6 @@
-# E2: VM layer. One clone Job (via provider-kubernetes Object) per node; status reports progress.
+# E2: VM layer. One clone Job (via provider-kubernetes Object) per node.
+# E3: Talos layer (cluster-up.sh Job, gated on all VMs ready) + Kubernetes verify Job (gated on Talos Job).
+# Status: phase + conditions VMsReady, TalosReady, KubernetesReady.
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -96,17 +98,147 @@ spec:
                           allowPrivilegeEscalation: false
                           capabilities: {drop: [ALL]}
           {{- end }}
+          {{- $vmsReady := eq (int $ready) (len $nodes) -}}
+          {{- $workerIPs := join "," ($xr.spec.network.workerIPs | default list) -}}
+          {{- $talosDone := false -}}
+          {{- $verifyDone := false -}}
+          {{- if $vmsReady }}
+          {{- $tobs := (index ($.observed.resources | default dict) (printf "talos-%s" $name)) | default dict -}}
+          {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $tobs)) 0 }}{{ $talosDone = true }}{{ end }}
+          {{- $vobs := (index ($.observed.resources | default dict) (printf "verify-%s" $name)) | default dict -}}
+          {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $vobs)) 0 }}{{ $verifyDone = true }}{{ end }}
+          ---
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: talos-{{ $name }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: talos-{{ $name }}
+              gotemplating.fn.crossplane.io/ready: {{ if $talosDone }}"True"{{ else }}"False"{{ end }}
+          spec:
+            providerConfigRef: {kind: ClusterProviderConfig, name: default}
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: talos-{{ $name }}
+                  namespace: talos-automation
+                  labels: {platform.ellin.net/cluster: {{ $name }}}
+                spec:
+                  backoffLimit: 2
+                  activeDeadlineSeconds: 1800
+                  template:
+                    spec:
+                      serviceAccountName: cluster-up
+                      restartPolicy: Never
+                      securityContext:
+                        runAsNonRoot: true
+                        runAsUser: 10001
+                        seccompProfile: {type: RuntimeDefault}
+                      containers:
+                      - name: talos
+                        image: {{ $env.talos.image }}
+                        # cluster-up.sh is idempotent: the VM step is a no-op ("exists, skipping") because the clone Jobs ran first.
+                        command: [cluster-up.sh]
+                        env:
+                        - {name: CLUSTER_NAME, value: {{ $name | quote }}}
+                        - {name: CP_IP, value: {{ $xr.spec.network.controlPlaneIP | quote }}}
+                        - {name: WORKER_IPS, value: {{ $workerIPs | quote }}}
+                        - {name: TALOS_VERSION, value: {{ $xr.spec.talosVersion | quote }}}
+                        - {name: SCHEMATIC, value: {{ $env.talos.schematic | quote }}}
+                        - {name: PVE_ENDPOINT, value: {{ $px.endpoint | quote }}}
+                        - {name: PVE_INSECURE, value: {{ if $px.insecureTLS }}"1"{{ else }}"0"{{ end }}}
+                        - {name: TEMPLATE_ID, value: {{ $tmpl | quote }}}
+                        - {name: TARGET_NODE, value: {{ $node | quote }}}
+                        - {name: STORAGE, value: {{ $nodeCfg.storage | quote }}}
+                        - {name: BRIDGE, value: {{ $nodeCfg.bridge | quote }}}
+                        - {name: PREFIX, value: {{ $env.network.prefix | quote }}}
+                        - {name: GATEWAY, value: {{ $env.network.gateway | quote }}}
+                        - {name: NAMESERVER, value: {{ $env.network.dns | quote }}}
+                        - {name: SEARCHDOMAIN, value: {{ $env.network.searchDomain | quote }}}
+                        - {name: HOME, value: /work}
+                        envFrom:
+                        - secretRef: {name: {{ $px.tokenSecretRef.name }}}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                        volumeMounts:
+                        - {name: work, mountPath: /work}
+                      volumes:
+                      - {name: work, emptyDir: {}}
+          {{- end }}
+          {{- if $talosDone }}
+          ---
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: verify-{{ $name }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: verify-{{ $name }}
+              gotemplating.fn.crossplane.io/ready: {{ if $verifyDone }}"True"{{ else }}"False"{{ end }}
+          spec:
+            providerConfigRef: {kind: ClusterProviderConfig, name: default}
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: verify-{{ $name }}
+                  namespace: talos-automation
+                  labels: {platform.ellin.net/cluster: {{ $name }}}
+                spec:
+                  backoffLimit: 6
+                  activeDeadlineSeconds: 900
+                  template:
+                    spec:
+                      serviceAccountName: cluster-up
+                      restartPolicy: Never
+                      securityContext:
+                        runAsNonRoot: true
+                        runAsUser: 10001
+                        seccompProfile: {type: RuntimeDefault}
+                      containers:
+                      - name: verify
+                        image: {{ $env.talos.image }}
+                        command:
+                        - sh
+                        - -ec
+                        - |
+                          export KUBECONFIG=/kube/kubeconfig
+                          kubectl wait --for=condition=Ready nodes --all --timeout=300s
+                          n=$(kubectl get nodes --no-headers | wc -l)
+                          [ "$n" -eq {{ len $nodes }} ] || { echo "expected {{ len $nodes }} nodes, found $n"; exit 1; }
+                          kubectl get nodes -o wide
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                        volumeMounts:
+                        - {name: kube, mountPath: /kube, readOnly: true}
+                      volumes:
+                      - name: kube
+                        secret: {secretName: {{ $name }}-kubeconfig}
+          {{- end }}
+          ---
+          apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+          kind: ClaimConditions
+          conditions:
+          - {type: VMsReady, status: {{ if $vmsReady }}"True"{{ else }}"False"{{ end }}, reason: {{ if $vmsReady }}AllVMsCloned{{ else }}VMsCreating{{ end }}, target: Composite}
+          - {type: TalosReady, status: {{ if $talosDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $talosDone }}ClusterBootstrapped{{ else }}Pending{{ end }}, target: Composite}
+          - {type: KubernetesReady, status: {{ if $verifyDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $verifyDone }}AllNodesReady{{ else }}Pending{{ end }}, target: Composite}
           ---
           apiVersion: platform.ellin.net/v1alpha1
           kind: TalosCluster
           status:
-            phase: {{ if eq (int $ready) (len $nodes) }}VMsReady{{ else }}VMsCreating{{ end }}
+            phase: {{ if $verifyDone }}Ready{{ else if $talosDone }}KubernetesVerifying{{ else if $vmsReady }}TalosApplying{{ else }}VMsCreating{{ end }}
             controlPlane:
               name: {{ $name }}-cp-1
               vmid: {{ $cpip := splitList "." $xr.spec.network.controlPlaneIP }}{{ printf "%d%03d" (index $cpip 2 | atoi) (index $cpip 3 | atoi) }}
             workerCount: {{ $xr.spec.workers.count }}
             proxmoxEndpoint: {{ $px.endpoint }}
             metallbIgnoreExcludeLB: {{ eq (int $xr.spec.workers.count) 0 }}
+            kubeconfigSecret: {{ $name }}-kubeconfig
+            talosconfigSecret: {{ $name }}-talosconfig
             vms: {total: {{ len $nodes }}, ready: {{ $ready }}}
   - step: ready
     functionRef: {name: function-auto-ready}
