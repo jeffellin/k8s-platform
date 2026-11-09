@@ -231,7 +231,7 @@ maturity of CAPMOX. Crossplane's advantages are one tool for everything and reus
 
 ## Phased plan
 
-0a. (script written: `hack/build-talos-template.sh`, untested on a real host) Script the template build from `docs/SingleNodeKubernetesonProxmox.md` Step 2a (a `hack/` script run on the Proxmox host: download Image Factory image, `qm create/import/template`), parameterized by schematic and Talos version, so a template can be built per node and per release. Also back up `secrets.yaml` and take the first etcd snapshot for `homelab` (handoff TODOs).
+0a. **Deferred.** Assume template 9100 exists and is good enough (Talos v1.14.5, schematic above). Template upgrades are handled later; `hack/build-talos-template.sh` (untested) is there for when that comes up. Still outstanding from the handoff and not template-related: back up `secrets.yaml` and take the first etcd snapshot for `homelab`.
 0. Decide Crossplane-vs-CAPI and the Proxmox provider (spike, half a day each).
 1. Install Crossplane + functions + providers on `talos-test` via `apps/`.
 2. Build and publish `talos-bootstrapper` image (include `bootstrap.sh`); test it by hand against a throwaway VM.
