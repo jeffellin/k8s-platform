@@ -11,6 +11,31 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 
 ---
 
+## Status (2026-11-08)
+
+| Story | State |
+|---|---|
+| A1 push plan branch | Done (branch `plan/crossplane-cluster-lifecycle` on GitHub, includes the two Talos docs) |
+| A2 manager -> VLAN 10 reachability | **Jeff verifying** (not done by Claude) |
+| A3 Proxmox API token | Done: `talos-provisioner@pve!bootstrapper`; read access verified. Clone/write rights first exercised in B1. Save the secret in 1Password if not yet done. |
+| A4 reserve IP/ID/MetalLB | Done: `lab-manager` `192.168.10.56` / `10056`; MetalLB `192.168.11.10-14`. Rows are PENDING and **uncommitted** in the `terraform` repo (`VLAN10-IP-ALLOCATION.md`, branch `ansible-base-packages`). |
+| A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
+| B1 next | Not started |
+
+### Action for Jeff: fix pve networking (A5)
+`pve`'s `vmbr1` is `192.168.8.2/24`; VLAN 10 is `192.168.8.0/22` and `/22` is correct. On `pve` (use the `192.168.1.52` session, not `192.168.8.2`):
+1. `grep -n -B2 -A8 'iface vmbr1' /etc/network/interfaces`
+2. Change the address to `192.168.8.2/22` (or `netmask 255.255.252.0`).
+3. `ifreload -a`, then `ip -br addr show vmbr1` should show `/22`.
+Check `pve2` for the same problem. Not a blocker for B1, but do it before relying on host-to-VM traffic; after B1, confirm `pve` can ping `192.168.10.56`.
+
+### Other notes carried forward
+- Template 9100 is named `talos-v1.14.4` in Proxmox (the guide says v1.14.5): confirm which version lands on disk after the first `apply-config` (installer image is v1.14.5).
+- The token ACL is broad (`/vms`); consider a Proxmox resource pool for Talos VMs after B1 works.
+- Pushing needs the SSH key in an agent in the same shell: `op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -`.
+
+---
+
 ## Epic A: Foundations (no cluster changes)
 
 **A1. Push the plan branch** (S)
