@@ -227,11 +227,11 @@ maturity of CAPMOX. Crossplane's advantages are one tool for everything and reus
 - Talos secrets bundle loss = unrecoverable admin access.
 - IP/VM-ID collisions: allocation is done by hand before creating the XR (D2); a CI lint against the markdown tables is nice-to-have.
 - Template drift: 9100 is hand-built; a new template number per Talos version is the guide's convention. The environment's `(node, talosVersion) -> template` map keeps that explicit; never edit a template in place.
-- `secrets.yaml` for the existing `homelab` cluster is not backed up yet (handoff TODO), and neither is a first etcd snapshot. The manager must not become the sole holder of other clusters' secrets before it is itself backed up.
+- `secrets.yaml` and a first etcd snapshot for the existing `homelab` cluster are now backed up. Keep it that way: the manager must not become the sole holder of other clusters' secrets before it is itself backed up.
 
 ## Phased plan
 
-0a. **Deferred.** Assume template 9100 exists and is good enough (Talos v1.14.5, schematic above). Template upgrades are handled later; `hack/build-talos-template.sh` (untested) is there for when that comes up. Still outstanding from the handoff and not template-related: back up `secrets.yaml` and take the first etcd snapshot for `homelab`.
+0a. **Deferred.** Assume template 9100 exists and is good enough (Talos v1.14.5, schematic above). Template upgrades are handled later; `hack/build-talos-template.sh` (untested) is there for when that comes up. Handoff items (back up `secrets.yaml`, first etcd snapshot for `homelab`): **done** per Jeff.
 0. Decide Crossplane-vs-CAPI and the Proxmox provider (spike, half a day each).
 1. Install Crossplane + functions + providers on `talos-test` via `apps/`.
 2. Build and publish `talos-bootstrapper` image (include `bootstrap.sh`); test it by hand against a throwaway VM.
