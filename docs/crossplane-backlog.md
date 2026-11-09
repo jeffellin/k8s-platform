@@ -24,11 +24,12 @@ As the bootstrapper, I need to reach new nodes on 50000/6443 from a pod on the m
 - Done when: pod reaches a VLAN 10 address; also reaches `factory.talos.dev`, `ghcr.io`/`docker.io`, `github.com`.
 - Demo: the `nc` output pasted in the doc.
 
-**A3. Create a scoped Proxmox API token** (S) [manual]
+**A3. Create a scoped Proxmox API token** (S) [manual] **DONE 2026-11-08**
 As the Job, I need least-privilege API access to `pve`.
 - Do: create a role + token for clone/config/power/allocate on `pve`, `vmbr1`, the target storage and pool; store in 1Password.
 - Done when: `curl` with the token lists VMs and reads template 9100's config but cannot touch other things.
 - Demo: successful `GET /nodes/pve/qemu/9100/config`. Records the exact permission set (closes an open item).
+- Result: token `talos-provisioner@pve!bootstrapper` (privsep) works. Role `TalosProvisioner` = `VM.Allocate VM.Clone VM.Audit VM.PowerMgmt VM.Config.{CPU,Memory,Disk,Network,Cloudinit,Options} Datastore.{AllocateSpace,Audit} SDN.Use`, granted on `/vms`, `/storage/local-lvm`, `/sdn/zones/localnetwork` to **both the user and the token** (privsep needs both). Reads of template 9100, local-lvm and bridges vmbr0/vmbr1 verified. Clone/write permissions are first exercised in B1. Token secret is in 1Password (to confirm).
 
 **A4. Reserve IP/ID and MetalLB range for `lab-manager`** (S)
 As Jeff, I want the allocation settled before any VM exists (D2, D14).
