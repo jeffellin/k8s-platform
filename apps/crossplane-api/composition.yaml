@@ -1,6 +1,9 @@
 # E2: VM layer. One clone Job (via provider-kubernetes Object) per node.
 # E3: Talos layer (cluster-up.sh Job, gated on all VMs ready) + Kubernetes verify Job (gated on Talos Job).
 # E4: platform Job (age key, sops-age, AWS creds, Flux Operator + FluxInstance via bootstrap.sh), gated on verify.
+# F3: annotation platform.ellin.net/teardown=true drops every layer and renders only teardown-<name>-<rev>
+#     (destroy-cluster.sh from the destroy-cluster ConfigMap); phase TearingDown -> TornDown. Deletion is guarded by
+#     delete-protection.yaml (ValidatingAdmissionPolicy).
 # Status: phase + conditions VMsReady, TalosReady, KubernetesReady, PlatformReady.
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
@@ -33,6 +36,7 @@ spec:
           {{- $name := $xr.metadata.name -}}
           {{- /* Job pod templates are immutable: bump $rev whenever a talos/verify/platform Job spec changes so Crossplane recreates the Jobs (all scripts are idempotent). */ -}}
           {{- $rev := "r2" -}}
+          {{- $teardown := eq (dig "metadata" "annotations" "platform.ellin.net/teardown" "" $xr) "true" -}}
           {{- $node := $xr.spec.node | default $px.defaultNode -}}
           {{- $nodeCfg := index $px.nodes $node -}}
           {{- $tmpl := index $nodeCfg.templates $xr.spec.talosVersion -}}
@@ -42,6 +46,75 @@ spec:
           {{- range $i, $ip := $xr.spec.network.workerIPs -}}
           {{- $nodes = append $nodes (dict "name" (printf "%s-w-%d" $name (add $i 1)) "ip" $ip "spec" $xr.spec.workers) -}}
           {{- end -}}
+          {{- if $teardown }}
+          {{- $dobs := (index ($.observed.resources | default dict) (printf "teardown-%s-%s" $name $rev)) | default dict -}}
+          {{- $tdone := false -}}
+          {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $dobs)) 0 }}{{ $tdone = true }}{{ end }}
+          {{- $allIPs := prepend ($xr.spec.network.workerIPs | default list) $xr.spec.network.controlPlaneIP }}
+          ---
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: teardown-{{ $name }}-{{ $rev }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: teardown-{{ $name }}-{{ $rev }}
+              gotemplating.fn.crossplane.io/ready: {{ if $tdone }}"True"{{ else }}"False"{{ end }}
+          spec:
+            providerConfigRef: {kind: ClusterProviderConfig, name: default}
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: teardown-{{ $name }}-{{ $rev }}
+                  namespace: talos-automation
+                  labels: {platform.ellin.net/cluster: {{ $name }}}
+                spec:
+                  backoffLimit: 1
+                  activeDeadlineSeconds: 900
+                  template:
+                    spec:
+                      serviceAccountName: cluster-down
+                      restartPolicy: Never
+                      securityContext:
+                        runAsNonRoot: true
+                        runAsUser: 10001
+                        seccompProfile: {type: RuntimeDefault}
+                      containers:
+                      - name: destroy
+                        image: {{ $env.talos.image }}
+                        command: [bash, /scripts/destroy-cluster.sh]
+                        env:
+                        - {name: CLUSTER, value: {{ $name | quote }}}
+                        - {name: DRY_RUN, value: "0"}
+                        - {name: IPS, value: {{ join ", " $allIPs | quote }}}
+                        - {name: PVE_ENDPOINT, value: {{ $px.endpoint | quote }}}
+                        - {name: PVE_INSECURE, value: {{ if $px.insecureTLS }}"1"{{ else }}"0"{{ end }}}
+                        - {name: HOME, value: /tmp}
+                        envFrom:
+                        - secretRef: {name: {{ $px.tokenSecretRef.name }}}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                        volumeMounts:
+                        - {name: scripts, mountPath: /scripts}
+                      volumes:
+                      - name: scripts
+                        configMap: {name: destroy-cluster}
+          ---
+          apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+          kind: ClaimConditions
+          conditions:
+          - {type: VMsReady, status: "False", reason: {{ if $tdone }}TornDown{{ else }}TearingDown{{ end }}, target: Composite}
+          - {type: TalosReady, status: "False", reason: {{ if $tdone }}TornDown{{ else }}TearingDown{{ end }}, target: Composite}
+          - {type: KubernetesReady, status: "False", reason: {{ if $tdone }}TornDown{{ else }}TearingDown{{ end }}, target: Composite}
+          - {type: PlatformReady, status: "False", reason: {{ if $tdone }}TornDown{{ else }}TearingDown{{ end }}, target: Composite}
+          ---
+          apiVersion: platform.ellin.net/v1alpha1
+          kind: TalosCluster
+          status:
+            phase: {{ if $tdone }}TornDown{{ else }}TearingDown{{ end }}
+          {{- else }}
           {{- $ready := 0 -}}
           {{- range $n := $nodes }}
           {{- $res := printf "vm-%s" $n.name }}
@@ -351,5 +424,6 @@ spec:
             kubeconfigSecret: {{ $name }}-kubeconfig
             talosconfigSecret: {{ $name }}-talosconfig
             vms: {total: {{ len $nodes }}, ready: {{ $ready }}}
+          {{- end }}
   - step: ready
     functionRef: {name: function-auto-ready}

@@ -1,0 +1,29 @@
+# F3: a TalosCluster can only be deleted after teardown (phase TornDown) or with an explicit keep-vms override.
+# Stops a bad revert or a Flux prune from deleting a cluster object (and, with it, forgetting its VMs).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata: {name: talosclusters-delete-protection}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [platform.ellin.net]
+      apiVersions: ["*"]
+      operations: [DELETE]
+      resources: [talosclusters]
+  validations:
+  - expression: >-
+      (has(oldObject.status) && has(oldObject.status.phase) && oldObject.status.phase == 'TornDown') ||
+      (has(oldObject.metadata.annotations) && 'platform.ellin.net/allow-delete' in oldObject.metadata.annotations &&
+       oldObject.metadata.annotations['platform.ellin.net/allow-delete'] == 'keep-vms')
+    messageExpression: >-
+      'refusing to delete TalosCluster ' + oldObject.metadata.name + ': tear it down first with
+      kubectl annotate taloscluster ' + oldObject.metadata.name + ' platform.ellin.net/teardown=true
+      and wait for PHASE=TornDown (destroys its VMs), or set platform.ellin.net/allow-delete=keep-vms to delete the object and keep the VMs'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata: {name: talosclusters-delete-protection}
+spec:
+  policyName: talosclusters-delete-protection
+  validationActions: [Deny]
