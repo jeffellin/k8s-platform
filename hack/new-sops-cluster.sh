@@ -29,4 +29,7 @@ for a in cfg["apps"]:
               "stringData:\n  access-key-id: AKIA...\n  secret-access-key: ...\n  region: us-east-1\n")
             print("wrote", ex.relative_to(root))
 PY
-echo "Next: fill + encrypt the secrets above, then: hack/render.py && git add -A && commit/push && bootstrap/bootstrap.sh $C"
+# Render now so .sops.yaml has a rule for this cluster (needed by `sops --encrypt`) and clusters/<name>/ exists.
+# Secrets that are not filled in yet are warnings here; the strict run below must pass before you commit.
+python3 -I "$ROOT/hack/render.py" --allow-incomplete
+echo "Next: fill + encrypt the secrets above, then: hack/render.py (strict: fails until every secret is encrypted) && git add -A && commit/push && bootstrap/bootstrap.sh $C"
