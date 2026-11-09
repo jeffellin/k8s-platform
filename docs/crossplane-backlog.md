@@ -26,6 +26,8 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | C1 image | **Done**: built and pushed as `ellinj/talos-automation:dev` (Jeff, no Docker on the Pi). Files: | `image/Dockerfile` + `.dockerignore`: talosctl v1.14.5, kubectl v1.37.1, yq v4.54.3, sops v3.13.3, flux v2.10.0 (each verified against upstream checksums; the download block was run as a script on arm64 and passed), plus apt `age jq git curl nc openssl python3-yaml`, non-root uid 10001, the four `hack/` Talos scripts in `/usr/local/bin`. Platform layer (`bootstrap.sh`, `render.py`) is **not** baked in: jobs `git clone` the repo. **Jeff to run**: `docker build -f image/Dockerfile -t ellinj/talos-automation:dev .` then `docker run --rm ellinj/talos-automation:dev talosctl version --client`. |
 | C2 pipeline | `.github/workflows/talos-automation-image.yml` (push to main on image/scripts paths, tags `image-v*`, manual); pushes `:<sha>`, `:talos-v1.14.5`, `:latest`. **Jeff to add repo secrets** `DOCKERHUB_USERNAME` (= `ellinj`) and `DOCKERHUB_TOKEN`. Workflow only runs once merged to `main`. |
 | C3 job | **Done and proven**: `kubectl apply -f deploy/talos-automation/cluster-up-lab-test.yaml` on `lab-manager` created a Ready, untainted single-node Talos cluster `lab-test` (VM 10057, 192.168.10.57) in 2m34s; Secrets `lab-test-{talos-secrets,talosconfig,kubeconfig}` exist and the stored kubeconfig works. Re-run (delete + apply the Job) was a no-op: restored secrets, `VM 10057 exists, skipping`, apply and bootstrap skipped. Throwaway `lab-test` still running; delete the VM and its three Secrets when finished. Details: `hack/cluster-up.sh` (clone -> gen -> apply/bootstrap -> workers; restores/stores Talos secrets as `<name>-talos-secrets`, outputs `<name>-talosconfig`/`<name>-kubeconfig` Secrets; control flow tested with stubs, idempotent by construction). `deploy/talos-automation/cluster-up-lab-test.yaml` (Namespace, SA, Role, Job for `lab-test` single node at 192.168.10.57; server dry-run OK). Secret `talos-automation/proxmox-token` created on `lab-manager` (not in Git). **Jeff to rebuild/push `ellinj/talos-automation:dev`** (script added to the image), then `kubectl apply` the manifest on `lab-manager`. |
+| D1 Crossplane | **Done** (PR #2): `apps/crossplane`, Helm chart `crossplane` 2.4.x (installed 2.4.3) in `crossplane-system`, enabled for `lab-manager` only; 21 crossplane.io CRDs, all Kustomizations Ready. |
+| D2 functions + provider | **Done** (PR #3): `apps/crossplane-config` (function-go-templating v0.13.2, function-environment-configs v0.9.2, function-auto-ready v0.7.3, provider-kubernetes v1.4.1 with a fixed ServiceAccount bound to cluster-admin) and `apps/crossplane-providerconfig` (`ClusterProviderConfig/default`, `kubernetes.m.crossplane.io/v1alpha1`, InjectedIdentity). All Installed and Healthy. Main-bound work is done in the worktree `/home/jeff/homelab/k8s-platform-main`. D3 next. |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
 | B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 done. |
 
@@ -139,12 +141,12 @@ As the Jobs, I need one image with the tools.
 
 ## Epic D: Crossplane on the manager
 
-**D1. Install Crossplane on `lab-manager`** (M)
+**D1. Install Crossplane on `lab-manager`** (M) **DONE (PR #2, 2026-11-09)**
 - Do: `apps/crossplane` (Helm), enabled for `lab-manager` in `clusters.yaml` on a branch; `talos-test` is not touched.
 - Done when: Flux applies it after merge; `kubectl get pods -n crossplane-system` healthy on `lab-manager`; its other Kustomizations still Ready.
 - Demo: pods + Kustomizations on `lab-manager`.
 
-**D2. Install functions + provider-kubernetes** (S)
+**D2. Install functions + provider-kubernetes** (S) **DONE (PR #3, 2026-11-09)**
 - Do: `apps/crossplane-config`: `function-go-templating` (or KCL), `function-environment-configs`, `function-auto-ready`, provider-kubernetes with a ProviderConfig for the local cluster.
 - Done when: packages report Healthy. Demo: `kubectl get functions,providers`.
 
