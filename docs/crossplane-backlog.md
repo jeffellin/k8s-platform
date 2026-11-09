@@ -20,8 +20,9 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | A3 Proxmox API token | Done: `talos-provisioner@pve!bootstrapper`; read access verified. Clone/write rights first exercised in B1. Save the secret in 1Password if not yet done. |
 | A4 reserve IP/ID/MetalLB | Done: `lab-manager` `192.168.10.56` / `10056`; MetalLB `192.168.11.10-14`. Rows are PENDING and **uncommitted** in the `terraform` repo (`VLAN10-IP-ALLOCATION.md`, branch `ansible-base-packages`). |
 | B2 config script | **Done**: `hack/talos-gen-config.sh <name> <cpIP> [--workers N]` (needs `talosctl` v1.14.5 + `yq`, installed on the Pi). Re-run gives identical configs; taint removed only when workers=0; `talosctl validate --mode cloud` passes. Output in git-ignored `_talos/<name>/`; **back up `secrets.yaml` (1Password)**. |
+| B3 apply+bootstrap | **Done**: `hack/talos-apply-bootstrap.sh <name> <ip>`. `lab-manager` is Ready, Talos v1.14.5, k8s v1.37.1, no taints. Re-run skips apply and bootstrap. Bootstrap needed a retry loop ("not available yet" while etcd prepares). Kubeconfig in git-ignored `_talos/lab-manager/kubeconfig`; **back up `secrets.yaml` and `talosconfig`**. Answers the template-version note: v1.14.5 is what landed. B5 next (Flux). |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
-| B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 next. |
+| B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 done. |
 
 ### Action for Jeff: fix pve networking (A5)
 `pve`'s `vmbr1` is `192.168.8.2/24`; VLAN 10 is `192.168.8.0/22` and `/22` is correct. On `pve` (use the `192.168.1.52` session, not `192.168.8.2`):
@@ -31,7 +32,7 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 Check `pve2` for the same problem. Not a blocker for B1, but do it before relying on host-to-VM traffic; after B1, confirm `pve` can ping `192.168.10.56`.
 
 ### Other notes carried forward
-- Template 9100 is named `talos-v1.14.4` in Proxmox (the guide says v1.14.5): confirm which version lands on disk after the first `apply-config` (installer image is v1.14.5).
+- (Resolved in B3: the node runs Talos v1.14.5.) Template 9100 is named `talos-v1.14.4` in Proxmox (the guide says v1.14.5): was to confirm which version lands on disk after the first `apply-config` (installer image is v1.14.5).
 - The token ACL is broad (`/vms`); consider a Proxmox resource pool for Talos VMs after B1 works.
 - Pushing needs the SSH key in an agent in the same shell: `op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -`.
 
@@ -82,7 +83,7 @@ As the Talos layer, I need reproducible `secrets.yaml` and machine configs.
 - Done when: running twice with the same `secrets.yaml` yields identical configs; `--dry-run apply` accepts them (use `talosctl validate`).
 - Demo: `talosctl validate --config controlplane.yaml --mode cloud`, and a diff showing the taint present/absent by worker count.
 
-**B3. Bring up `lab-manager` with scripts** (M)
+**B3. Bring up `lab-manager` with scripts** (M) **DONE**
 As Jeff, I want the new single-node Talos cluster built from the scripts, not by hand.
 - Do: `hack/talos-apply-bootstrap.sh`: wait for 50000, `apply-config --insecure`, `bootstrap` once, `health`, write kubeconfig.
 - Needs: B1, B2.
