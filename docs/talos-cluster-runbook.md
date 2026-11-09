@@ -67,12 +67,14 @@ image `ellinj/talos-automation:dev`; `VLAN10-IP-ALLOCATION.md` in `~/homelab/ter
    ```
 6. **Use it.**
    ```bash
-   kubectl -n talos-automation get secret <name>-kubeconfig -o jsonpath='{.data.kubeconfig}' | base64 -d > <name>.kubeconfig
-   kubectl -n talos-automation get secret <name>-talosconfig -o jsonpath='{.data.talosconfig}' | base64 -d > <name>.talosconfig
-   KUBECONFIG=<name>.kubeconfig kubectl get nodes
-   KUBECONFIG=<name>.kubeconfig kubectl -n flux-system get kustomization      # all Ready (9 apps)
+   hack/get-kubeconfig.sh <name> --talosconfig          # writes _talos/<name>/kubeconfig and talosconfig (git-ignored, mode 0600); from a checkout of main
+   export KUBECONFIG=$PWD/_talos/<name>/kubeconfig
+   kubectl get nodes
+   kubectl -n flux-system get kustomization             # all Ready (9 apps)
    curl --resolve hello-<name>.ellin.net:443:<first-LB-IP> https://hello-<name>.ellin.net   # expect 200, Let's Encrypt cert
    ```
+   `-o FILE` picks another path; the script reads the Secrets `<name>-kubeconfig` / `<name>-talosconfig` from the manager (default manager kubeconfig:
+   `~/homelab/k8s-platform/_talos/lab-manager/kubeconfig`, or `--manager-kubeconfig` / `MANAGER_KUBECONFIG`).
    Expected: control plane tainted `NoSchedule` and worker untainted when `workers > 0`; none tainted at 0 workers; MetalLB `ignoreExcludeLB` false/true accordingly.
 
 **Notes**
