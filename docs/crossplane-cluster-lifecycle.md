@@ -274,7 +274,7 @@ only if you later want HA control planes with automated rolling replacement.
 2. VM mechanism: start with the Job calling the Proxmox API; Upjet provider (with Jeff's contacts) as a later option.
 3. Secrets: P1 (manager supplies), P2 (shared key), or P3 (pre-generated key)?
 4. ~~Template on `pve2` / placement / environment object~~ decided: `pve` only at first, `pve2` templates later; Proxmox settings in a Crossplane `EnvironmentConfig` (no new CRD).
-5. ~~Manager reach to VLAN 10~~ resolved: all networks route to each other. Remaining: can Talos nodes reach GitHub and `factory.talos.dev`/registries for installs and upgrades?
+5. ~~Manager reach to VLAN 10~~ resolved: all networks route to each other. Also confirmed: VLAN 10 can reach everything it needs (Image Factory, registries, GitHub).
 6. ~~HA / VIP~~ decided: single control plane now; keep the spec shaped so a list of control planes can replace it later.
-7. ~~Bootstrapper image location~~ decided: Jeff's existing Docker image repo (Docker Hub; account/repo name and build method still to be confirmed).
+7. ~~Bootstrapper image location~~ decided: Docker Hub, image `jeffellin/talosbootstraper` (spelled that way; build method still to be decided).
 3. ~~Secrets~~ decided: **P1**. The manager holds the credentials; the bootstrap Job creates them in the new cluster. SOPS stays for legacy clusters.
