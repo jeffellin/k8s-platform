@@ -51,3 +51,5 @@ clusters:
         options:
           hello_host: hello-manager.ellin.net
       - name: crossplane          # the cluster manager; enabled only here
+      - name: crossplane-config   # functions + provider-kubernetes
+      - name: crossplane-providerconfig   # ClusterProviderConfig (needs the provider's CRDs)
