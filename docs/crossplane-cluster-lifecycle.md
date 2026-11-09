@@ -11,6 +11,8 @@ Status: **idea, no code**. Nothing here is verified against the live cluster; it
 - **D4** Talos VMs are **not** built with `terraform/modules/linux-vm`. They are cloned from Proxmox template **9100**. (Template 9100 was built by hand following `docs/SingleNodeKubernetesonProxmox.md`; the `talos-01` VM was cloned from it and configured manually per `docs/TalosHandoff.md`. Those two docs are the source of truth for the manual procedure this plan automates. Scripting the template build is phase 0a.)
 - **D5** Proxmox host settings (cluster node, storage pool, bridge, template) live in a separate, reusable environment object, not in each cluster. See "Proxmox environment".
 
+- **D6** **Crossplane v2 is the chosen approach** (spike result below). Jeff has contacts on the Upjet side, so if the Job-based VM layer proves awkward, a proper Upjet-generated Proxmox provider is an available fallback rather than a dependency.
+
 ## Goal
 
 Add a new Kubernetes cluster with **one commit**:
@@ -255,7 +257,7 @@ only if you later want HA control planes with automated rolling replacement.
 ## Phased plan
 
 0a. **Deferred.** Assume template 9100 exists and is good enough (Talos v1.14.5, schematic above). Template upgrades are handled later; `hack/build-talos-template.sh` (untested) is there for when that comes up. Handoff items (back up `secrets.yaml`, first etcd snapshot for `homelab`): **done** per Jeff.
-0. ~~Decide Crossplane-vs-CAPI and the Proxmox provider~~ (spike done, see above; awaiting confirmation).
+0. ~~Decide Crossplane-vs-CAPI and the Proxmox provider~~ (decided: Crossplane v2, Job-based VM layer).
 1. Install Crossplane + functions + providers on `talos-test` via `apps/`.
 2. Build and publish `talos-bootstrapper` image (include `bootstrap.sh`); test it by hand against a throwaway VM.
 3. XRD + composition for VM layer only; create/destroy a 1-node cluster's VMs.
@@ -266,8 +268,8 @@ only if you later want HA control planes with automated rolling replacement.
 
 ## Open questions
 
-1. ~~Crossplane vs CAPI~~ spike done: recommend Crossplane v2 + bootstrapper Jobs (see Spike result). Confirm?
-2. VM mechanism: spike supports the Job calling the Proxmox API (no trustworthy Crossplane Proxmox provider). Confirm?
+1. ~~Crossplane vs CAPI~~ decided: Crossplane v2 (D6).
+2. VM mechanism: start with the Job calling the Proxmox API; Upjet provider (with Jeff's contacts) as a later option.
 3. Secrets: P1 (manager supplies), P2 (shared key), or P3 (pre-generated key)?
 4. Does `pve2` need its own template (no shared storage), and do you want CP/workers spread across nodes? `ProxmoxEnvironment` as a new CRD or a Crossplane `EnvironmentConfig`?
 5. ~~Manager reach to VLAN 10~~ resolved: all networks route to each other. Remaining: can Talos nodes reach GitHub and `factory.talos.dev`/registries for installs and upgrades?
