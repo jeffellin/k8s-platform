@@ -19,8 +19,9 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | A2 manager -> VLAN 10 reachability | **Jeff verifying** (not done by Claude) |
 | A3 Proxmox API token | Done: `talos-provisioner@pve!bootstrapper`; read access verified. Clone/write rights first exercised in B1. Save the secret in 1Password if not yet done. |
 | A4 reserve IP/ID/MetalLB | Done: `lab-manager` `192.168.10.56` / `10056`; MetalLB `192.168.11.10-14`. Rows are PENDING and **uncommitted** in the `terraform` repo (`VLAN10-IP-ALLOCATION.md`, branch `ansible-base-packages`). |
+| B2 config script | **Done**: `hack/talos-gen-config.sh <name> <cpIP> [--workers N]` (needs `talosctl` v1.14.5 + `yq`, installed on the Pi). Re-run gives identical configs; taint removed only when workers=0; `talosctl validate --mode cloud` passes. Output in git-ignored `_talos/<name>/`; **back up `secrets.yaml` (1Password)**. |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
-| B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 next. |
+| B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 next. |
 
 ### Action for Jeff: fix pve networking (A5)
 `pve`'s `vmbr1` is `192.168.8.2/24`; VLAN 10 is `192.168.8.0/22` and `/22` is correct. On `pve` (use the `192.168.1.52` session, not `192.168.8.2`):
@@ -75,7 +76,7 @@ As the VM layer, I need an idempotent clone recipe.
 - Done when: VM 10056 (`lab-manager-cp-1` or just `lab-manager`) boots and the Talos dashboard shows maintenance mode at 192.168.10.56; `nc -zv 192.168.10.56 50000` works from the manager pod (also closes A2's 50000 check).
 - Demo: console screenshot + second run says "exists, skipping".
 
-**B2. Generate configs from a script** (M)
+**B2. Generate configs from a script** (M) **DONE**
 As the Talos layer, I need reproducible `secrets.yaml` and machine configs.
 - Do: `hack/talos-gen-config.sh <name> <cpIP> [--workers N]` using `talosctl gen secrets` / `gen config --with-secrets` with the 1.14 multi-doc patch (UnattendedInstallConfig + UserVolumeConfig), and a `yq` step that removes the control-plane taint when workers == 0.
 - Done when: running twice with the same `secrets.yaml` yields identical configs; `--dry-run apply` accepts them (use `talosctl validate`).

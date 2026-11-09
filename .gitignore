@@ -1,3 +1,4 @@
 *.agekey
 kubeconfig*
 *.tfstate*
+_talos/
