@@ -8,6 +8,15 @@ metadata: {name: provider-kubernetes}
 spec:
   serviceAccountTemplate:
     metadata: {name: provider-kubernetes}
+  # Poll every 30s (default 10m) so Job status reaches TalosCluster status promptly.
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            - name: package-runtime
+              args: ["--poll=30s"]
 ---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
