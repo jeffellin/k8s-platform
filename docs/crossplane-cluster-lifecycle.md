@@ -36,6 +36,7 @@ platform layer (Flux Operator + this repo's apps) running on it.
 | D12 | `XR` is **namespaced** (Crossplane v2: no claims). Kubeconfig/talosconfig Secrets are emitted explicitly by the composition. |
 | D13 | Changes that affect an existing running cluster (e.g. `talos-test`) are built on a branch and **merged to `main` only on Jeff's go-ahead**. Adding the new `lab-manager` entry does not touch `talos-test`. |
 | D14 | The manager is a **new single-node cluster `lab-manager`** on VLAN 10 (IP/ID from `VLAN10-IP-ALLOCATION.md`), built first by hand-scripted steps and the legacy `bootstrap.sh` path (R1) **before any Crossplane work**. Crossplane is then installed on `lab-manager`, not on `talos-test`. `talos-test` is decommissioned (or kept as a scratch cluster) once `lab-manager` is proven. Its Talos cluster name is `lab-manager`, so there is no kubeconfig context collision with `homelab`. |
+| D15 | **Teardown is two explicit steps** (decided 2026-11-09): (1) annotate the XR `platform.ellin.net/teardown: "true"`, which makes the composition render one `teardown-<name>` Job that destroys the VMs and the manager-side Secrets and sets `phase: TornDown`; (2) `kubectl delete`, which a ValidatingAdmissionPolicy only allows once `phase` is `TornDown` (or with an explicit `allow-delete: "keep-vms"`). Deleting an XR alone never destroys VMs. A finalizer-based controller that makes one delete do everything is a later option (backlog F9). See section 8.1. |
 
 ## 3. Current state (for context)
 
@@ -173,8 +174,39 @@ Phase-1 form: XR file in `management/clusters/` + `clusters.yaml` entry + regene
 - **N -> 0 forbidden (D3):** XRD CEL transition rule, roughly `oldSelf.workers.count == 0 || self.workers.count > 0`. **VERIFY** that XRD schemas accept `x-kubernetes-validations` with `oldSelf` (standard CRD feature, not confirmed in Crossplane docs); otherwise a validating function in the pipeline. Test in phase 3.
 - **N -> M (M > 0):** cordon/drain, `talosctl reset`, `kubectl delete node`, then delete the VM. Never delete the VM first.
 - **Upgrades:** changing `talosVersion` / `kubernetesVersion` triggers `talosctl upgrade` (installer image, same schematic) / `upgrade-k8s` Jobs, one node at a time, control plane first. Back up etcd first.
-- **Deletion:** safe deletion policy for VM resources, plus a protection annotation (`platform.ellin.net/allow-delete: "true"`) so a bad revert cannot destroy a cluster.
+- **Deletion:** safe deletion policy for VM resources, Superseded by D15 / section 8.1 (two-step teardown).
 - **Status:** conditions `VMsReady`, `TalosReady`, `KubernetesReady`, `PlatformReady`; kubeconfig Secret name in status.
+
+### 8.1 Teardown: two-step flow (D15)
+
+```
+kubectl annotate taloscluster <name> platform.ellin.net/teardown=true   # step 1: destroy
+kubectl get taloscluster <name>                                         # wait for PHASE=TornDown
+kubectl delete taloscluster <name>                                      # step 2: remove the object
+```
+
+**Why not "delete destroys the VMs":** Crossplane does not run the composition pipeline on XR deletion and has no pre-delete hook, so a plain delete only removes the composed Jobs and leaves the VMs (this is how `e2test`/`e2scale` were left behind). A pod that tears down on SIGTERM was rejected: any eviction or node drain would destroy a cluster's VMs by accident.
+
+**Pieces**
+- A `ValidatingAdmissionPolicy` on `DELETE` of `talosclusters` rejects the delete unless `status.phase == TornDown` or `allow-delete == keep-vms`, with a message saying what to do. This also stops a bad revert or a Flux prune from deleting a cluster.
+- `platform.ellin.net/teardown: "true"` makes the composition drop every other layer and render only the `teardown-<name>` Job.
+- The Job runs a destroy script kept in a ConfigMap (Flux-managed, mounted into the Job: no image rebuild, and reusable by hand for non-XR clusters such as `lab-test`). It stops and purges each VM through the Proxmox API, **only** VMs whose tags contain `talos` and `<name>` (and whose name/ID match); it refuses to run for the manager cluster; it deletes `<name>-talos-secrets`, `-talosconfig`, `-kubeconfig`, `-age-key` in `talos-automation`; it prints the IPs, VM IDs and MetalLB range to remove from `VLAN10-IP-ALLOCATION.md` (the Job cannot edit the terraform repo).
+- Removing the `teardown` annotation afterwards makes the composition clone fresh VMs: a new cluster, not a restore, because the Talos secrets are gone.
+
+**Pros**
+- Small and safe: no custom controller, nothing new running all the time.
+- Destruction is a visible, deliberate act with its own status and logs; nothing destructive happens as a side effect of a delete, a revert or a prune.
+- Reuses the pattern of the other layers (gated Job, `$rev` name, conditions).
+- Proves the destroy script and the Proxmox token's delete rights before anything more automatic builds on them.
+- A failed or blocked teardown leaves the XR in place, visible and retryable.
+
+**Cons**
+- Two commands plus a wait, instead of one; easy to forget step 1 (the policy's message tells you).
+- An XR deleted by other means (finalizer removal, `--force`, deleting the CRD) still leaves the VMs orphaned.
+- The state machine is slightly unusual (`TornDown` is a terminal-ish phase with the object still present).
+- IP/VM ID freeing stays a manual allocation-doc edit.
+
+**Alternative kept for later (F9):** a finalizer plus a small controller Deployment on the manager, so one delete (after the `allow-delete` annotation) destroys the VMs and removes the object. Better UX; costs a custom always-on component, and a down controller or Proxmox error leaves the XR in `Terminating`. It would reuse this destroy script. The longest-term option is a real Proxmox provider that manages VMs natively so deletion removes them with no Job or controller; that replaces the clone-Job approach and is a much larger change.
 
 ## 9. Crossplane components
 
