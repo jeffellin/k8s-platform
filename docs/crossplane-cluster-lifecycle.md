@@ -213,12 +213,35 @@ Phase 3 (goal): XR file + allocation rows only. A CI allocation check is now opt
 - Install Crossplane + functions + providers as new apps in this repo (`apps/crossplane`, `apps/crossplane-config`) enabled for `talos-test` in `clusters.yaml`, so the manager itself is built by the existing platform. The XRD/Composition/XRs live in e.g. `management/` and are synced by a second Flux Kustomization on the manager only.
 - Providers likely needed: provider-terraform (or opentofu) / Proxmox provider, provider-kubernetes (for resources inside the new cluster), provider-helm (optional).
 
-## Alternative worth a fair look: Cluster API
+## Spike result: Crossplane vs Cluster API (web research, 2026-11-08)
 
-CAPI with the Proxmox infra provider (CAPMOX) and Talos bootstrap/control-plane providers (CABPT/CACPPT) already models
-"1 CP + N workers", scaling, rolling upgrades and node lifecycle, which are the hardest parts of this plan. **VERIFY** current
-maturity of CAPMOX. Crossplane's advantages are one tool for everything and reusing the Terraform standards. A hybrid
-(Crossplane XRD as the friendly API, composing CAPI `Cluster` objects) is possible but adds a layer. Worth deciding before building.
+Based on search results only (secondary sources in places); nothing was installed or tested.
+
+**Cluster API route (CAPMOX + Talos providers)**
+- CAPMOX (`ionos-cloud/cluster-api-provider-proxmox`) is actively released: v0.8 introduced the `v1alpha2` API (works with CAPI v1.11 / contract `v1beta2`), v0.9.0 is the newest I saw. The v0.1-v0.7 line is `v1alpha1` and marked obsolete, so it is still moving fast and had breaking API changes recently.
+- Talos bootstrap provider (CABPT) generates machine configs; the Talos **control plane provider (CACPPT) states that Sidero Labs is no longer actively developing it** and points to Omni. For a design that needs 1 CP + N workers on Talos, losing the maintained CP provider is the biggest strike against this route (CAPI's kubeadm control plane provider doesn't apply to Talos).
+- CAPI also needs its own management stack (clusterctl or the CAPI operator, cert-manager, per-provider controllers) and a different mental model (`Cluster`, `MachineDeployment`, `ProxmoxMachineTemplate`, `TalosConfigTemplate`...), plus the 1.14-style multi-document config and the template-9100/nocloud workflow would need to be expressed through CAPMOX clone settings and CABPT patches -- **unverified** whether that works with Talos 1.14's `UnattendedInstallConfig`.
+
+**Crossplane route**
+- Crossplane v2 (docs up to v2.3 exist): XRDs default to `scope: Namespaced`, **claims are gone** for new XRs, and native patch-and-transform is deprecated in favour of composition functions. So the plan's `TalosCluster` is a namespaced XR (e.g. in a `clusters` namespace); no `Claim` kind. v2 also has no built-in connection secrets for namespaced XRs: the function must emit the kubeconfig Secret explicitly. The existing wording in "Crossplane choices" should be read with this.
+- Proxmox: no official provider found. A community Upjet-generated one wraps bpg/terraform-provider-proxmox (`valkiriaaquatica/provider-proxmox-bpg`, Apache-2.0, ~17 stars, ~10 open issues, says it supports Crossplane v2) and another older one (`dcoppa/provider-proxmox`). Neither has a track record I could confirm. That reinforces choosing **bootstrapper Jobs calling the Proxmox API** for the VM layer rather than depending on a small community provider.
+- CEL transition rules (`oldSelf`) are standard CRD validation and XRDs generate CRDs, so the N->0 guard should work; **not confirmed in docs**, test it in phase 3.
+
+**Comparison for this homelab**
+
+| | Crossplane + Jobs | Cluster API (CAPMOX + CABPT/CACPPT) |
+|---|---|---|
+| Talos CP provider maintained | n/a (we run `talosctl`) | **No** (CACPPT unmaintained) |
+| Proxmox provider | Our Job (small, owned) | CAPMOX, active, but fast-moving API |
+| Scaling/upgrade logic | We write it (drain/reset, upgrade Jobs) | Provided (for kubeadm); for Talos depends on unmaintained CP provider |
+| Fits template 9100 / nocloud / 1.14 multi-doc | Directly (mirrors the manual procedure) | Unverified |
+| One-commit UX | One XR | `Cluster` + several templates (could be wrapped by Crossplane) |
+| Extra components | Crossplane + functions | CAPI core + 3 providers + cert-manager |
+
+**Recommendation: Crossplane v2 with composition functions plus a custom `talos-bootstrapper` image (Jobs).** CAPI's main
+advantage (lifecycle logic) is weakened by the unmaintained Talos control-plane provider, and your needs are small
+(1 CP, N workers, N->0 forbidden, in-place upgrades via `talosctl`). Cost: we own the scale-up/down and upgrade Jobs. Revisit CAPI
+only if you later want HA control planes with automated rolling replacement.
 
 ## Risks
 
@@ -232,7 +255,7 @@ maturity of CAPMOX. Crossplane's advantages are one tool for everything and reus
 ## Phased plan
 
 0a. **Deferred.** Assume template 9100 exists and is good enough (Talos v1.14.5, schematic above). Template upgrades are handled later; `hack/build-talos-template.sh` (untested) is there for when that comes up. Handoff items (back up `secrets.yaml`, first etcd snapshot for `homelab`): **done** per Jeff.
-0. Decide Crossplane-vs-CAPI and the Proxmox provider (spike, half a day each).
+0. ~~Decide Crossplane-vs-CAPI and the Proxmox provider~~ (spike done, see above; awaiting confirmation).
 1. Install Crossplane + functions + providers on `talos-test` via `apps/`.
 2. Build and publish `talos-bootstrapper` image (include `bootstrap.sh`); test it by hand against a throwaway VM.
 3. XRD + composition for VM layer only; create/destroy a 1-node cluster's VMs.
@@ -243,8 +266,8 @@ maturity of CAPMOX. Crossplane's advantages are one tool for everything and reus
 
 ## Open questions
 
-1. Crossplane vs CAPI (above)? With 9100 cloning and N->0 forbidden, CAPI's advantages shrink somewhat but scaling/upgrades remain the draw.
-2. VM mechanism: Job calling the Proxmox API (C, leaning) vs a small `talos-vm` Terraform module (A)?
+1. ~~Crossplane vs CAPI~~ spike done: recommend Crossplane v2 + bootstrapper Jobs (see Spike result). Confirm?
+2. VM mechanism: spike supports the Job calling the Proxmox API (no trustworthy Crossplane Proxmox provider). Confirm?
 3. Secrets: P1 (manager supplies), P2 (shared key), or P3 (pre-generated key)?
 4. Does `pve2` need its own template (no shared storage), and do you want CP/workers spread across nodes? `ProxmoxEnvironment` as a new CRD or a Crossplane `EnvironmentConfig`?
 5. ~~Manager reach to VLAN 10~~ resolved: all networks route to each other. Remaining: can Talos nodes reach GitHub and `factory.talos.dev`/registries for installs and upgrades?
