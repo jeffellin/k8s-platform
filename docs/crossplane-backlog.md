@@ -11,7 +11,20 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 
 ---
 
-## Status (2026-11-08)
+## Status (updated 2026-11-09, end of day)
+
+**Where we are:** Epics A-D are done. `lab-manager` (192.168.10.56, VM 10056) runs Flux, the legacy platform apps, and Crossplane v2 with functions, provider-kubernetes and `EnvironmentConfig/homelab`. A Job on the manager created a throwaway cluster from a single `kubectl apply` (C3). **Next: Epic E** (`TalosCluster` XRD + composition + first XR), then F.
+
+**Open items for Jeff**
+- Back up `~/.config/sops/age/lab-manager.agekey` and `_talos/lab-manager/secrets.yaml` (1Password); both exist only on the Pi.
+- A5: fix `pve` `vmbr1` netmask to `/22`; check `pve2`/`pve3`.
+- Commit the `VLAN10-IP-ALLOCATION.md` rows in the terraform repo (branch `ansible-base-packages`): `lab-manager` 192.168.10.56 and its MetalLB range. Add a row for `lab-test` (192.168.10.57) while it exists.
+- C2: add GitHub repo secrets `DOCKERHUB_USERNAME` (= `ellinj`) and `DOCKERHUB_TOKEN`; the workflow only runs once this branch is merged to `main`.
+- Delete throwaway `lab-test` when done: VM 10057, Job `cluster-up-lab-test` and Secrets `lab-test-{talos-secrets,talosconfig,kubeconfig}` in `talos-automation` on `lab-manager`.
+- Decide: rename Proxmox template 9100 (`talos-v1.14.4`, installs v1.14.5) or just keep documenting it; build templates on `pve2`/`pve3` and extend the token ACLs if clusters should land there.
+- Merge this plan branch to `main` when ready (docs, `hack/` scripts, `image/`, `deploy/`, workflow).
+
+**Working agreements:** primary checkout `/home/jeff/homelab/k8s-platform` stays on this branch; changes for `main` are made in worktree `/home/jeff/homelab/k8s-platform-main` and PRed. The manager's out-of-band Secrets (not in Git) live in namespace `talos-automation`: `proxmox-token`, `aws-credentials`. GitHub release downloads were flaky (504) on 2026-11-09; retry.
 
 | Story | State |
 |---|---|
@@ -28,6 +41,7 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | C3 job | **Done and proven**: `kubectl apply -f deploy/talos-automation/cluster-up-lab-test.yaml` on `lab-manager` created a Ready, untainted single-node Talos cluster `lab-test` (VM 10057, 192.168.10.57) in 2m34s; Secrets `lab-test-{talos-secrets,talosconfig,kubeconfig}` exist and the stored kubeconfig works. Re-run (delete + apply the Job) was a no-op: restored secrets, `VM 10057 exists, skipping`, apply and bootstrap skipped. Throwaway `lab-test` still running; delete the VM and its three Secrets when finished. Details: `hack/cluster-up.sh` (clone -> gen -> apply/bootstrap -> workers; restores/stores Talos secrets as `<name>-talos-secrets`, outputs `<name>-talosconfig`/`<name>-kubeconfig` Secrets; control flow tested with stubs, idempotent by construction). `deploy/talos-automation/cluster-up-lab-test.yaml` (Namespace, SA, Role, Job for `lab-test` single node at 192.168.10.57; server dry-run OK). Secret `talos-automation/proxmox-token` created on `lab-manager` (not in Git). **Jeff to rebuild/push `ellinj/talos-automation:dev`** (script added to the image), then `kubectl apply` the manifest on `lab-manager`. |
 | D1 Crossplane | **Done** (PR #2): `apps/crossplane`, Helm chart `crossplane` 2.4.x (installed 2.4.3) in `crossplane-system`, enabled for `lab-manager` only; 21 crossplane.io CRDs, all Kustomizations Ready. |
 | D2 functions + provider | **Done** (PR #3): `apps/crossplane-config` (function-go-templating v0.13.2, function-environment-configs v0.9.2, function-auto-ready v0.7.3, provider-kubernetes v1.4.1 with a fixed ServiceAccount bound to cluster-admin) and `apps/crossplane-providerconfig` (`ClusterProviderConfig/default`, `kubernetes.m.crossplane.io/v1alpha1`, InjectedIdentity). All Installed and Healthy. Main-bound work is done in the worktree `/home/jeff/homelab/k8s-platform-main`. D3 next. |
+| D3 EnvironmentConfig | **Done** (PR #4): `apps/crossplane-environment` -> `EnvironmentConfig/homelab` (one per Proxmox cluster, per-node settings inside; only `pve` + template `v1.14.5: 9100` for now). Secrets `proxmox-token` and `aws-credentials` created out of band in `talos-automation` on the manager (AWS from 1Password `r53-aws`). |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
 | B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 done. |
 
@@ -150,7 +164,7 @@ As the Jobs, I need one image with the tools.
 - Do: `apps/crossplane-config`: `function-go-templating` (or KCL), `function-environment-configs`, `function-auto-ready`, provider-kubernetes with a ProviderConfig for the local cluster.
 - Done when: packages report Healthy. Demo: `kubectl get functions,providers`.
 
-**D3. The `EnvironmentConfig` + credentials Secrets** (S) [manual: secrets]
+**D3. The `EnvironmentConfig` + credentials Secrets** (S) [manual: secrets] **DONE (PR #4, 2026-11-09)**
 - Do: `EnvironmentConfig homelab` (endpoint, nodes, templates, network); seed `proxmox-api` token Secret and the AWS credentials Secret on `lab-manager` via an extended `hack/seed-secrets.sh` from 1Password.
 - Done when: both exist; no secret values in git. Demo: `kubectl get environmentconfig homelab -o yaml` and Secret key names.
 
