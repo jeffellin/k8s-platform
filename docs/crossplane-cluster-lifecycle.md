@@ -13,6 +13,8 @@ Status: **idea, no code**. Nothing here is verified against the live cluster; it
 
 - **D6** **Crossplane v2 is the chosen approach** (spike result below). Jeff has contacts on the Upjet side, so if the Job-based VM layer proves awkward, a proper Upjet-generated Proxmox provider is an available fallback rather than a dependency.
 
+- **D7** Secrets use **P1**: bootstrap creates the per-cluster age key and stores it on the manager; the AWS credentials are held on the manager and written into the new cluster by the bootstrap Job (no SOPS files needed for them).
+
 ## Goal
 
 Add a new Kubernetes cluster with **one commit**:
@@ -147,7 +149,7 @@ publishes the **public** key in the XR status. For the legacy path nothing chang
 **The one remaining gap:** secrets in `clusters/<name>/secrets/` are encrypted to `admin + cluster` public keys and committed. If
 the key is created only at bootstrap, the commit that creates the cluster cannot already contain secrets encrypted to it. Ways out:
 
-- **P1 -- manager supplies secrets (recommended):** the Job, which has the admin material, creates the AWS-credential Secrets directly in the new cluster from values held on the manager (1Password -> External Secrets, or a plain Secret). Apps then don't need SOPS secrets for these. Legacy clusters keep SOPS.
+- **P1 -- manager supplies secrets (DECIDED, D7):** the Job, which has the admin material, creates the AWS-credential Secrets directly in the new cluster from values held on the manager (1Password -> External Secrets, or a plain Secret). Apps then don't need SOPS secrets for these. Legacy clusters keep SOPS.
 - **P2 -- shared "manager-built" age key:** one age key pair for all Crossplane-built clusters, public key committed in `keys/`, private key on the manager. Secrets can be encrypted ahead of time and the commit is complete. Cost: a leaked key opens every such cluster's secrets.
 - **P3 -- pre-generate the key** (`new-cluster.sh` before the commit) and reference it from the XR. Zero new design, but it is a manual step before the commit, and the key is not "created by bootstrap".
 - P4 -- two commits (create, then add secrets). Rejected.
@@ -275,4 +277,4 @@ only if you later want HA control planes with automated rolling replacement.
 5. ~~Manager reach to VLAN 10~~ resolved: all networks route to each other. Remaining: can Talos nodes reach GitHub and `factory.talos.dev`/registries for installs and upgrades?
 6. ~~HA / VIP~~ decided: single control plane now; keep the spec shaped so a list of control planes can replace it later.
 7. ~~Bootstrapper image location~~ decided: Jeff's existing Docker image repo (Docker Hub; account/repo name and build method still to be confirmed).
-3. Secrets: **still open**. Default is P1 (manager supplies credentials), pending Jeff's confirmation.
+3. ~~Secrets~~ decided: **P1**. The manager holds the credentials; the bootstrap Job creates them in the new cluster. SOPS stays for legacy clusters.
