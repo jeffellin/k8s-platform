@@ -13,7 +13,7 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 
 ## Status (updated 2026-11-09, end of day)
 
-**Where we are:** Epics A-D are done. `lab-manager` (192.168.10.56, VM 10056) runs Flux, the legacy platform apps, and Crossplane v2 with functions, provider-kubernetes and `EnvironmentConfig/homelab`. A Job on the manager created a throwaway cluster from a single `kubectl apply` (C3). **Next: Epic E** (`TalosCluster` XRD + composition + first XR), then F.
+**Where we are:** Epics A-D are done. `lab-manager` (192.168.10.56, VM 10056) runs Flux, the legacy platform apps, and Crossplane v2 with functions, provider-kubernetes and `EnvironmentConfig/homelab`. A Job on the manager created a throwaway cluster from a single `kubectl apply` (C3). **Epic E in progress:** E1 and E2 done (PRs #5 merged, #6 open). **Next: E3** (Talos layer), then E4, E5, F.
 
 **Open items for Jeff**
 - Back up `~/.config/sops/age/lab-manager.agekey` and `_talos/lab-manager/secrets.yaml` (1Password); both exist only on the Pi.
@@ -42,6 +42,8 @@ Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox 
 | D1 Crossplane | **Done** (PR #2): `apps/crossplane`, Helm chart `crossplane` 2.4.x (installed 2.4.3) in `crossplane-system`, enabled for `lab-manager` only; 21 crossplane.io CRDs, all Kustomizations Ready. |
 | D2 functions + provider | **Done** (PR #3): `apps/crossplane-config` (function-go-templating v0.13.2, function-environment-configs v0.9.2, function-auto-ready v0.7.3, provider-kubernetes v1.4.1 with a fixed ServiceAccount bound to cluster-admin) and `apps/crossplane-providerconfig` (`ClusterProviderConfig/default`, `kubernetes.m.crossplane.io/v1alpha1`, InjectedIdentity). All Installed and Healthy. Main-bound work is done in the worktree `/home/jeff/homelab/k8s-platform-main`. D3 next. |
 | D3 EnvironmentConfig | **Done** (PR #4): `apps/crossplane-environment` -> `EnvironmentConfig/homelab` (one per Proxmox cluster, per-node settings inside; only `pve` + template `v1.14.5: 9100` for now). Secrets `proxmox-token` and `aws-credentials` created out of band in `talos-automation` on the manager (AWS from 1Password `r53-aws`). |
+| E1 XRD | **Done** (PR #5, merged): `apps/crossplane-api` XRD v2 namespaced `platform.ellin.net/v1alpha1 TalosCluster`, CEL: workerIPs==workers.count, IPs outside DHCP range, N->0 forbidden (`oldSelf` transition rule works; CEL cost needed maxLength/maxItems). Status fields must be declared in the XRD schema. |
+| E2 VM layer | **Done** (PR #6 open, Jeff to merge): composition renders a clone Job per node via provider-kubernetes Object (ns talos-automation, from EnvironmentConfig + XR); status phase VMsCreating/VMsReady, vms ready/total; provider polls every 30s. Deleting the XR removes Jobs, NOT VMs (teardown = F3). Leftover test VMs 10064/10065 (e2test, 192.168.10.64/.65) still in Proxmox, not in allocation doc: delete or reuse for E3. Flux reverts hand-applied changes until PR merges. |
 | A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
 | B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 done. |
 
