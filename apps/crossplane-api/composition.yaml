@@ -1,4 +1,4 @@
-# E1: no-op composition. Reads EnvironmentConfig and reports derived values in status; creates nothing.
+# E2: VM layer. One clone Job (via provider-kubernetes Object) per node; status reports progress.
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -16,7 +16,7 @@ spec:
         environmentConfigs:
         - type: Reference
           ref: {name: homelab}
-  - step: render-status
+  - step: render
     functionRef: {name: function-go-templating}
     input:
       apiVersion: gotemplating.fn.crossplane.io/v1beta1
@@ -26,17 +26,87 @@ spec:
         template: |
           {{- $xr := .observed.composite.resource -}}
           {{- $env := index .context "apiextensions.crossplane.io/environment" -}}
-          {{- $cp := $xr.spec.network.controlPlaneIP | splitList "." -}}
+          {{- $px := $env.proxmox -}}
+          {{- $name := $xr.metadata.name -}}
+          {{- $node := $xr.spec.node | default $px.defaultNode -}}
+          {{- $nodeCfg := index $px.nodes $node -}}
+          {{- $tmpl := index $nodeCfg.templates $xr.spec.talosVersion -}}
+          {{- $nodes := list -}}
+          {{- $cp := dict "name" (printf "%s-cp-1" $name) "ip" $xr.spec.network.controlPlaneIP "spec" $xr.spec.controlPlane -}}
+          {{- $nodes = append $nodes $cp -}}
+          {{- range $i, $ip := $xr.spec.network.workerIPs -}}
+          {{- $nodes = append $nodes (dict "name" (printf "%s-w-%d" $name (add $i 1)) "ip" $ip "spec" $xr.spec.workers) -}}
+          {{- end -}}
+          {{- $ready := 0 -}}
+          {{- range $n := $nodes }}
+          {{- $res := printf "vm-%s" $n.name }}
+          {{- $obs := (index ($.observed.resources | default dict) $res) | default dict -}}
+          {{- $done := false -}}
+          {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $obs)) 0 }}{{ $done = true }}{{ $ready = add $ready 1 }}{{ end }}
+          ---
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: {{ $res }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: {{ $res }}
+              gotemplating.fn.crossplane.io/ready: {{ if $done }}"True"{{ else }}"False"{{ end }}
+          spec:
+            providerConfigRef: {kind: ClusterProviderConfig, name: default}
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: clone-{{ $n.name }}
+                  namespace: talos-automation
+                  labels: {platform.ellin.net/cluster: {{ $name }}}
+                spec:
+                  backoffLimit: 3
+                  template:
+                    spec:
+                      serviceAccountName: cluster-up
+                      restartPolicy: Never
+                      securityContext:
+                        runAsNonRoot: true
+                        runAsUser: 10001
+                        seccompProfile: {type: RuntimeDefault}
+                      containers:
+                      - name: clone
+                        image: {{ $env.talos.image }}
+                        command: [clone-talos-vm.sh, --name, {{ $n.name }}, --ip, {{ $n.ip }}]
+                        env:
+                        - {name: PVE_ENDPOINT, value: {{ $px.endpoint | quote }}}
+                        - {name: PVE_INSECURE, value: {{ if $px.insecureTLS }}"1"{{ else }}"0"{{ end }}}
+                        - {name: TEMPLATE_ID, value: {{ $tmpl | quote }}}
+                        - {name: TARGET_NODE, value: {{ $node | quote }}}
+                        - {name: STORAGE, value: {{ $nodeCfg.storage | quote }}}
+                        - {name: BRIDGE, value: {{ $nodeCfg.bridge | quote }}}
+                        - {name: PREFIX, value: {{ $env.network.prefix | quote }}}
+                        - {name: GATEWAY, value: {{ $env.network.gateway | quote }}}
+                        - {name: NAMESERVER, value: {{ $env.network.dns | quote }}}
+                        - {name: SEARCHDOMAIN, value: {{ $env.network.searchDomain | quote }}}
+                        - {name: CORES, value: {{ $n.spec.cpu | default $env.vm.cores | quote }}}
+                        - {name: MEMORY_MIB, value: {{ $n.spec.memoryMiB | default $env.vm.memoryMiB | quote }}}
+                        - {name: DATA_GIB, value: {{ $n.spec.dataDiskGiB | default $env.vm.dataDiskGiB | quote }}}
+                        - {name: TAGS, value: {{ printf "talos;%s" $name | quote }}}
+                        envFrom:
+                        - secretRef: {name: {{ $px.tokenSecretRef.name }}}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+          {{- end }}
           ---
           apiVersion: platform.ellin.net/v1alpha1
           kind: TalosCluster
           status:
-            phase: Planned
+            phase: {{ if eq (int $ready) (len $nodes) }}VMsReady{{ else }}VMsCreating{{ end }}
             controlPlane:
-              name: {{ $xr.metadata.name }}-cp-1
-              vmid: {{ printf "%d%03d" (index $cp 2 | atoi) (index $cp 3 | atoi) }}
+              name: {{ $name }}-cp-1
+              vmid: {{ $cpip := splitList "." $xr.spec.network.controlPlaneIP }}{{ printf "%d%03d" (index $cpip 2 | atoi) (index $cpip 3 | atoi) }}
             workerCount: {{ $xr.spec.workers.count }}
-            proxmoxEndpoint: {{ $env.proxmox.endpoint }}
+            proxmoxEndpoint: {{ $px.endpoint }}
             metallbIgnoreExcludeLB: {{ eq (int $xr.spec.workers.count) 0 }}
+            vms: {total: {{ len $nodes }}, ready: {{ $ready }}}
   - step: ready
     functionRef: {name: function-auto-ready}

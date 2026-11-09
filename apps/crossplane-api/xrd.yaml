@@ -88,5 +88,10 @@ spec:
                   name: {type: string}
                   vmid: {type: integer}
               workerCount: {type: integer}
+              vms:
+                type: object
+                properties:
+                  total: {type: integer}
+                  ready: {type: integer}
               proxmoxEndpoint: {type: string}
               metallbIgnoreExcludeLB: {type: boolean}
