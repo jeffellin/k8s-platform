@@ -1,3 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources: [xrd.yaml, composition.yaml]
+resources: [xrd.yaml, composition.yaml, teardown-rbac.yaml, delete-protection.yaml]
+configMapGenerator:
+- name: destroy-cluster
+  namespace: talos-automation
+  files: [destroy-cluster.sh]
+  options: {disableNameSuffixHash: true}
