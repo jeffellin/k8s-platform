@@ -1,0 +1,6 @@
+# The image only needs the Talos/Proxmox scripts; everything else (secrets, _talos/, keys, docs) stays out of the build context.
+*
+!hack/clone-talos-vm.sh
+!hack/talos-gen-config.sh
+!hack/talos-apply-bootstrap.sh
+!hack/talos-apply-worker.sh
