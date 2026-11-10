@@ -1,10 +1,10 @@
-# Created by hack/new-talos-cluster.sh. Teardown: kubectl annotate taloscluster f4test platform.ellin.net/teardown=true,
+  # Created by hack/new-talos-cluster.sh. Teardown: kubectl annotate taloscluster f4test platform.ellin.net/teardown=true,
 # wait for PHASE=TornDown, delete the object, then hack/new-talos-cluster.sh --remove f4test.
 apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
 metadata: {name: f4test, namespace: default}
-annotations:
-  platform.ellin.net/teardown: true
+  annotations:
+    platform.ellin.net/teardown: true
 spec:
   network:
     controlPlaneIP: 192.168.10.59
