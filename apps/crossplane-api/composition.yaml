@@ -40,6 +40,7 @@ spec:
           {{- $node := $xr.spec.node | default $px.defaultNode -}}
           {{- $nodeCfg := index $px.nodes $node -}}
           {{- $tmpl := index $nodeCfg.templates $xr.spec.talosVersion -}}
+          {{- $storage := $xr.spec.storage | default $nodeCfg.storage -}}
           {{- $nodes := list -}}
           {{- $cp := dict "name" (printf "%s-cp-1" $name) "ip" $xr.spec.network.controlPlaneIP "spec" $xr.spec.controlPlane -}}
           {{- $nodes = append $nodes $cp -}}
@@ -158,7 +159,7 @@ spec:
                         - {name: PVE_INSECURE, value: {{ if $px.insecureTLS }}"1"{{ else }}"0"{{ end }}}
                         - {name: TEMPLATE_ID, value: {{ $tmpl | quote }}}
                         - {name: TARGET_NODE, value: {{ $node | quote }}}
-                        - {name: STORAGE, value: {{ $nodeCfg.storage | quote }}}
+                        - {name: STORAGE, value: {{ $storage | quote }}}
                         - {name: BRIDGE, value: {{ $nodeCfg.bridge | quote }}}
                         - {name: PREFIX, value: {{ $env.network.prefix | quote }}}
                         - {name: GATEWAY, value: {{ $env.network.gateway | quote }}}
@@ -247,7 +248,7 @@ spec:
                         - {name: PVE_INSECURE, value: {{ if $px.insecureTLS }}"1"{{ else }}"0"{{ end }}}
                         - {name: TEMPLATE_ID, value: {{ $tmpl | quote }}}
                         - {name: TARGET_NODE, value: {{ $node | quote }}}
-                        - {name: STORAGE, value: {{ $nodeCfg.storage | quote }}}
+                        - {name: STORAGE, value: {{ $storage | quote }}}
                         - {name: BRIDGE, value: {{ $nodeCfg.bridge | quote }}}
                         - {name: PREFIX, value: {{ $env.network.prefix | quote }}}
                         - {name: GATEWAY, value: {{ $env.network.gateway | quote }}}

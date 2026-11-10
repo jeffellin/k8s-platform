@@ -32,6 +32,11 @@ spec:
               node:
                 type: string
                 description: Proxmox node to place VMs on (default from the EnvironmentConfig).
+              storage:
+                type: string
+                maxLength: 64
+                pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+                description: Proxmox storage ID for the VM system and data disks (default from the node's EnvironmentConfig entry). Must exist on the target node.
               network:
                 type: object
                 required: [controlPlaneIP]
