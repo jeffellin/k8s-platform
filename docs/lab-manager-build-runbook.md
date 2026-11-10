@@ -14,27 +14,66 @@ clusters. This runbook builds one **from nothing** (Part A: the Talos node) and 
 ## Prerequisites
 
 - Proxmox template **9100** on `pve` (Talos nocloud, installs v1.14.5; `hack/build-talos-template.sh` builds one on the Proxmox host).
-- Proxmox API token `talos-provisioner@pve!bootstrapper` with role `TalosProvisioner` (backlog A3) and its secret.
+- Proxmox API token `talos-provisioner@pve!bootstrapper` with role `TalosProvisioner` (backlog A3) **and its secret. Where that secret is stored is the first gap: see "Before you delete the old VM" below.**
 - A free IP/VM ID: `192.168.10.56` / `10056`, MetalLB `192.168.11.10-14`, recorded in `~/homelab/terraform/VLAN10-IP-ALLOCATION.md`.
 - On the Pi: `talosctl` v1.14.5, `yq`, `kubectl`, `age`, `sops`, `jq`, `op` (1Password CLI, signed in), `gh`; SSH key in an agent for pushing
   (`op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -`).
-- 1Password items: `op://HomeLab/r53-aws` (Route53 keys: `access key id`, `secret access key`) and the Proxmox token secret.
+- 1Password: `op://HomeLab/r53-aws` (Route53 keys: `access key id`, `secret access key`) exists. The item named **`Proxmox API Token` is NOT the `talos-provisioner` token**: it was created 2026-08-24, before that token (2026-11-08), and does not mention it. The `talos-provisioner` secret is, as far as I can verify, only in the `proxmox-token` Secret on the running manager.
 - Docker Hub image `ellinj/talos-automation:dev` pushed (the Jobs use it); the Docker Hub workflow only runs from `main` with repo secrets set (backlog C2).
-- Git layout: the Talos scripts (`hack/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`) are in the **plan-branch checkout**
+- Git layout (the primary checkout `~/homelab/k8s-platform` is now on `main`, so the Talos scripts are **not there**; see Part A): the Talos scripts (`hack/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`) are in the **plan-branch checkout**
   `~/homelab/k8s-platform`; everything meant for `main` (`bootstrap/`, `clusters.yaml`, `hack/render.py`, `hack/new-sops-cluster.sh`, `hack/seed-secrets.sh`) is done in the
   worktree `~/homelab/k8s-platform-main`.
 
+## Before you delete the old VM
+
+Do these while the old manager is still running. Anything that exists only on it is lost with its disks.
+
+1. **Save the Proxmox token secret.** It lives only in Secret `proxmox-token` (see Prerequisites). Copy it somewhere you control (a new 1Password item named for the token id
+   `talos-provisioner@pve!bootstrapper`) without printing it into a shared terminal:
+   ```bash
+   kubectl -n talos-automation get secret proxmox-token -o jsonpath='{.data.PVE_TOKEN_SECRET}' | base64 -d | op item create --category=password --title='Proxmox talos-provisioner!bootstrapper' --vault=HomeLab 'password[password]=-' 2>/dev/null || echo "adapt to your op version"
+   ```
+   **If it is already lost, make a new token.** On `pve` (reconstructed from backlog A3, untested): the role and the ACLs for **both the user and the token** (privilege separation needs both):
+   ```bash
+   pveum role add TalosProvisioner -privs "VM.Allocate VM.Clone VM.Audit VM.PowerMgmt VM.Config.CPU VM.Config.Memory VM.Config.Disk VM.Config.Network VM.Config.Cloudinit VM.Config.Options Datastore.AllocateSpace Datastore.Audit SDN.Use"
+   pveum user add talos-provisioner@pve                       # skip if it exists
+   pveum user token remove talos-provisioner@pve bootstrapper  # skip if it does not exist
+   pveum user token add talos-provisioner@pve bootstrapper --privsep 1   # prints the secret ONCE: save it
+   for path in /vms /storage/local-lvm /sdn/zones/localnetwork; do
+     pveum acl modify $path --users talos-provisioner@pve --roles TalosProvisioner
+     pveum acl modify $path --tokens 'talos-provisioner@pve!bootstrapper' --roles TalosProvisioner
+   done
+   ```
+2. **Make Git contain no child-cluster XRs** (`ls apps/talos-clusters/*.yaml`; merge the removal of any left, today `f4test`), or a fresh manager will try to build them.
+3. **Take a restorable backup, not just a snapshot.** `qm destroy` deletes a VM's snapshots with it. A vzdump backup survives: `vzdump 10056 --storage <backup-storage> --mode snapshot`
+   (on `pve`; pick the storage). It is the safety net for any gap this runbook missed.
+4. **Delete the old VM** on `pve`: `qm stop 10056 && qm destroy 10056 --purge`. Nothing in this repo does it (the F3 destroy script refuses `lab-manager`). After this the old cluster's etcd,
+   its Secrets (`proxmox-token`, `aws-credentials`, any child cluster Secrets) and its Flux state are gone.
+
+What is **not** lost, verified 2026-11-09: the SOPS files and keys in Git (the age key on the Pi matches `keys/lab-manager.pub`, so no re-keying is needed), template 9100 on `pve`
+(`talos-v1.14.4`, installs v1.14.5), and everything Flux deploys. The audit of hand-made state on the manager found only: namespace `talos-automation`, ServiceAccount/Role/RoleBinding `cluster-up`,
+Secrets `proxmox-token` and `aws-credentials`, and a finished `cluster-up-lab-test` Job. (An empty namespace `clusters` also exists; it is not needed.) No hand-made cluster-wide RBAC.
+
 ## A. Build the Talos node (the dial tone)
 
-From `~/homelab/k8s-platform`:
+The Talos scripts live only on the plan branch until it is merged to `main` (backlog F15), and the primary checkout is on `main`. Use a worktree of the plan branch, and point the
+scripts at the existing `_talos/lab-manager` (git-ignored; it still holds the cluster's `secrets.yaml`, `talosconfig` and kubeconfig):
 
 ```bash
-export PVE_TOKEN_SECRET=...                                           # from 1Password
+cd ~/homelab/k8s-platform && git worktree add ~/homelab/k8s-platform-plan plan/crossplane-cluster-lifecycle   # once
+cd ~/homelab/k8s-platform-plan
+OUT=~/homelab/k8s-platform/_talos/lab-manager      # reuse this directory so the old secrets.yaml (cluster identity) is kept, or `rm -rf` it for a brand-new identity
+```
+
+Then:
+
+```bash
+export PVE_TOKEN_SECRET=...                                           # see "Before you delete the old VM": NOT in the 1Password item named Proxmox API Token
 hack/clone-talos-vm.sh --name lab-manager --ip 192.168.10.56          # clones VM 10056 from template 9100, starts it; re-run = "exists, skipping"
 nc -zv 192.168.10.56 50000                                            # Talos maintenance API answers
-hack/talos-gen-config.sh lab-manager 192.168.10.56 --workers 0        # writes _talos/lab-manager/ (git-ignored); 0 workers = control plane schedulable
-hack/talos-apply-bootstrap.sh lab-manager 192.168.10.56               # apply config, bootstrap etcd once, wait healthy, write kubeconfig (about 5-10 min)
-export KUBECONFIG=$PWD/_talos/lab-manager/kubeconfig
+hack/talos-gen-config.sh lab-manager 192.168.10.56 --workers 0 --out $OUT   # 0 workers = control plane schedulable; keeps an existing $OUT/secrets.yaml silently
+hack/talos-apply-bootstrap.sh lab-manager 192.168.10.56 --dir $OUT        # apply config, bootstrap etcd once, wait healthy, write kubeconfig (about 5-10 min)
+export KUBECONFIG=$OUT/kubeconfig
 kubectl get nodes -o wide                                             # Ready, Talos v1.14.5, k8s v1.37.x, no taints
 ```
 
@@ -116,11 +155,11 @@ composition copies into every child cluster.
 ### 4. Bootstrap Flux and let Git build the platform
 
 ```bash
-KUBECONFIG=~/homelab/k8s-platform/_talos/lab-manager/kubeconfig bootstrap/bootstrap.sh lab-manager
+FLUX_OPERATOR_VERSION=v0.62.1 KUBECONFIG=~/homelab/k8s-platform/_talos/lab-manager/kubeconfig bootstrap/bootstrap.sh lab-manager
 kubectl -n flux-system get fluxinstance,gitrepository,kustomization
 ```
 
-`bootstrap.sh` requires `KUBECONFIG` to be set explicitly, installs the Flux Operator, creates `flux-system/sops-age` from `~/.config/sops/age/lab-manager.agekey`, and applies a
+**Pin the Flux Operator version** (`FLUX_OPERATOR_VERSION=v0.62.1`, what the manager runs today): without it `bootstrap.sh` installs `latest`. `bootstrap.sh` requires `KUBECONFIG` to be set explicitly, installs the Flux Operator, creates `flux-system/sops-age` from `~/.config/sops/age/lab-manager.agekey`, and applies a
 `FluxInstance` that syncs `clusters/lab-manager` from `main`. From there Git does the rest, in dependency order: metallb, metallb-config, local-path-provisioner,
 metrics-server, contour, cert-manager, cluster-issuers, external-dns, hello-nginx; then `crossplane`, `crossplane-config` (functions and provider-kubernetes),
 `crossplane-providerconfig`, `crossplane-environment` (EnvironmentConfig `homelab`), `crossplane-api` (XRD, composition, delete protection, destroy script), and `talos-clusters` (the XRs).
