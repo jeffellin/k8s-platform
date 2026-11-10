@@ -47,9 +47,6 @@ clusters:
       - name: cert-manager        # needs secrets/cert-manager/aws-credentials.sops.yaml
       - name: cluster-issuers
       - name: external-dns        # needs secrets/external-dns/aws-credentials.sops.yaml
-      - name: hello-nginx
-        options:
-          hello_host: hello-manager.ellin.net
       - name: crossplane          # the cluster manager; enabled only here
       - name: crossplane-config   # functions + provider-kubernetes
       - name: crossplane-providerconfig   # ClusterProviderConfig (needs the provider's CRDs)
