@@ -20,9 +20,8 @@ clusters. This runbook builds one **from nothing** (Part A: the Talos node) and 
   (`op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -`).
 - 1Password: `op://HomeLab/r53-aws` (Route53 keys: `access key id`, `secret access key`) exists. The item named **`Proxmox API Token` is NOT the `talos-provisioner` token**: it was created 2026-08-24, before that token (2026-11-08), and does not mention it. The `talos-provisioner` secret is, as far as I can verify, only in the `proxmox-token` Secret on the running manager.
 - Docker Hub image `ellinj/talos-automation:dev` pushed (the Jobs use it); the Docker Hub workflow only runs from `main` with repo secrets set (backlog C2).
-- Git layout (the primary checkout `~/homelab/k8s-platform` is now on `main`, so the Talos scripts are **not there**; see Part A): the Talos scripts (`hack/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`) are in the **plan-branch checkout**
-  `~/homelab/k8s-platform`; everything meant for `main` (`bootstrap/`, `clusters.yaml`, `hack/render.py`, `hack/new-sops-cluster.sh`, `hack/seed-secrets.sh`) is done in the
-  worktree `~/homelab/k8s-platform-main`.
+- Git layout: since the plan branch was merged to `main` (2026-11-09) all scripts (`hack/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`, `render.py`, `new-sops-cluster.sh`, `seed-secrets.sh`) and `bootstrap/` are on `main`.
+  Run everything from a checkout of `main` (or of the plan branch if it is up to date with `main`); `~/homelab/k8s-platform` holds the git-ignored `_talos/` directory.
 
 ## Before you delete the old VM
 
@@ -94,18 +93,16 @@ Success: all Flux Kustomizations Ready, `hello-manager.ellin.net` 200, and the n
 **What can go wrong, in order of likelihood**
 - Flux on the new manager cannot decrypt the secrets: step 3 was merged with files still encrypted to the old key. Check with the `sops -d` loop above, redo `seed-secrets.sh`, merge again, then kick Flux.
 - The clone or Jobs fail with a Proxmox 401/403: the new token lacks the ACL lines for the **token** (not only the user).
-- `hack/talos-*.sh` not found: you are in the checkout on `main`; use the plan-branch worktree (Part A).
+- `hack/talos-*.sh` not found: your checkout predates the 2026-11-09 merge of the plan branch into `main`; `git pull`.
 - GitHub release downloads return 504 (Flux Operator install, MetalLB chart): retry; Flux retries on its own.
 - Let's Encrypt re-issues `hello-manager.ellin.net`: fine (the limit is five duplicate certificates a week).
 
 ## A. Build the Talos node (the dial tone)
 
-The Talos scripts live only on the plan branch until it is merged to `main` (backlog F15), and the primary checkout is on `main`. Use a worktree of the plan branch, and point the
-scripts at the existing `_talos/lab-manager` (git-ignored; it still holds the cluster's `secrets.yaml`, `talosconfig` and kubeconfig):
+Run from an up-to-date checkout of `main` (`git pull` in `~/homelab/k8s-platform`) and point the scripts at `_talos/lab-manager` (git-ignored; it holds the cluster's `secrets.yaml`, `talosconfig` and kubeconfig):
 
 ```bash
-cd ~/homelab/k8s-platform && git worktree add ~/homelab/k8s-platform-plan plan/crossplane-cluster-lifecycle   # once
-cd ~/homelab/k8s-platform-plan
+cd ~/homelab/k8s-platform && git pull
 OUT=~/homelab/k8s-platform/_talos/lab-manager      # reuse this directory so the old secrets.yaml (cluster identity) is kept, or `rm -rf` it for a brand-new identity
 ```
 

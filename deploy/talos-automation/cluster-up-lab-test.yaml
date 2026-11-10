@@ -1,3 +1,6 @@
+# !!! DO NOT apply this whole file again. The Job at the bottom builds a cluster named `lab-test` at 192.168.10.57, which has since been destroyed and whose IP/VM ID 10057 may be reused.
+# !!! The Namespace/ServiceAccount/Role/RoleBinding (first four objects) are still required by the Crossplane composition's Jobs and are NOT defined anywhere else in Git yet
+# !!! (backlog F11): apply those four objects only, e.g. see docs/lab-manager-build-runbook.md, Part B step 3.
 # C3 demo: create a throwaway single-node Talos cluster `lab-test` from the manager.
 # Needs (not in Git): Secret talos-automation/proxmox-token with PVE_ENDPOINT, PVE_TOKEN_ID, PVE_TOKEN_SECRET.
 #   kubectl apply -f deploy/talos-automation/cluster-up-lab-test.yaml

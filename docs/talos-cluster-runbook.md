@@ -26,7 +26,7 @@ Setup used in every command below:
 
 ```bash
 export KUBECONFIG=~/homelab/k8s-platform/_talos/lab-manager/kubeconfig   # the manager
-# Git work for main happens in the worktree, never in the plan-branch checkout:
+# Git work: a small change goes as its own branch off main (in a worktree such as ~/homelab/k8s-platform-main); bigger work happens on the plan branch and is merged to main with a PR (merge commit):
 cd ~/homelab/k8s-platform-main && git fetch && git checkout -b <branch> origin/main
 # Pushing needs the SSH key in an agent in the same shell:
 op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -
