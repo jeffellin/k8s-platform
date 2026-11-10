@@ -3,6 +3,8 @@
 apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
 metadata: {name: f4test, namespace: default}
+annotations:
+  platform.ellin.net/teardown: true
 spec:
   network:
     controlPlaneIP: 192.168.10.59
