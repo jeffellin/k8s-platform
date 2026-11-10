@@ -1,0 +1,236 @@
+# Crossplane cluster lifecycle: backlog
+
+Companion to `docs/crossplane-cluster-lifecycle.md` (the design; decisions D1-D14 are referenced below).
+
+**Direction (D14):** first build a new single-node cluster **`lab-manager`** on VLAN 10 by scripts + the SOPS bootstrap path, and make *it* the Crossplane manager. `talos-test` is untouched and retired later.
+Each story is small enough for one sitting, has a **demo** (what you can show when it's done), and leaves the
+manager healthy. Work them in order; "needs" lists hard dependencies. Anything touching an existing running cluster is built on a branch
+and merged to `main` only on Jeff's go-ahead (D13).
+
+Legend: size S (<1h), M (1-3h), L (half day+). `[manual]` = needs Jeff (Proxmox shell, 1Password, Docker Hub).
+
+---
+
+## Status (updated 2026-11-09, end of day)
+
+**Where we are:** Epics A-D are done. `lab-manager` (192.168.10.56, VM 10056) runs Flux, the platform apps, and Crossplane v2 with functions, provider-kubernetes and `EnvironmentConfig/homelab`. A Job on the manager created a throwaway cluster from a single `kubectl apply` (C3). **Epic E in progress:** E1, E2 done (PRs #5, #6 merged); E3, E4, E5 done (PRs #7-#10 merged); F3 (teardown) and F4 (scaffold) done (PRs #11-#14). **Next: Epic F**, suggested order F1 (scale-down with drain), F6 (backups), F8, F2, F7, F5, F9. No test clusters are left running: Proxmox has only `lab-manager`.
+
+**Open items for Jeff**
+- Back up `~/.config/sops/age/lab-manager.agekey` and `_talos/lab-manager/secrets.yaml` (1Password); both exist only on the Pi.
+- A5: fix `pve` `vmbr1` netmask to `/22`; check `pve2`/`pve3`.
+- Commit the `VLAN10-IP-ALLOCATION.md` rows in the terraform repo (branch `ansible-base-packages`): `lab-manager` 192.168.10.56 and its MetalLB range. Add a row for `lab-test` (192.168.10.57) while it exists.
+- C2: add GitHub repo secrets `DOCKERHUB_USERNAME` (= `ellinj`) and `DOCKERHUB_TOKEN`; the workflow only runs once this branch is merged to `main`.
+- ~~Delete throwaway `lab-test`~~ done in F3 (VM and Secrets destroyed; the finished Job `cluster-up-lab-test` may remain).
+- Decide: rename Proxmox template 9100 (`talos-v1.14.4`, installs v1.14.5) or just keep documenting it; build templates on `pve2`/`pve3` and extend the token ACLs if clusters should land there.
+- ~~Merge this plan branch to `main`~~ done 2026-11-09 (docs, `hack/` scripts, `image/`, `deploy/`, workflow). The plan branch stays the working branch; see Working agreements. First run of the image workflow needs the Docker Hub secrets below, or it fails at the login step.
+
+**Working agreements (from 2026-11-09, after the plan branch was merged to `main`):** work continues on `plan/crossplane-cluster-lifecycle`. When a chunk is done, open a PR from it into `main` and merge it with a **merge commit, not a squash**; then bring the plan branch up to date (`git merge origin/main`). Anything Flux deploys (`apps/`, `clusters/`, `clusters.yaml`) only changes when it reaches `main`, and hand-testing on the manager needs the relevant Flux Kustomization suspended (and resumed after). Small independent changes may still go as their own PR off `main`. The manager's out-of-band Secrets (not in Git) live in namespace `talos-automation`: `proxmox-token`, `aws-credentials`. GitHub release downloads were flaky (504) on 2026-11-09; retry.
+
+| Story | State |
+|---|---|
+| A1 push plan branch | Done (branch `plan/crossplane-cluster-lifecycle` on GitHub, includes the two Talos docs) |
+| A2 manager -> VLAN 10 reachability | **Jeff verifying** (not done by Claude) |
+| A3 Proxmox API token | Done: `talos-provisioner@pve!bootstrapper`; read access verified. Clone/write rights first exercised in B1. Save the secret in 1Password if not yet done. |
+| A4 reserve IP/ID/MetalLB | Done: `lab-manager` `192.168.10.56` / `10056`; MetalLB `192.168.11.10-14`. Rows are PENDING and **uncommitted** in the `terraform` repo (`VLAN10-IP-ALLOCATION.md`, branch `ansible-base-packages`). |
+| B2 config script | **Done**: `hack/talos-gen-config.sh <name> <cpIP> [--workers N]` (needs `talosctl` v1.14.5 + `yq`, installed on the Pi). Re-run gives identical configs; taint removed only when workers=0; `talosctl validate --mode cloud` passes. Output in git-ignored `_talos/<name>/`; **back up `secrets.yaml` (1Password)**. |
+| B3 apply+bootstrap | **Done**: `hack/talos-apply-bootstrap.sh <name> <ip>`. `lab-manager` is Ready, Talos v1.14.5, k8s v1.37.1, no taints. Re-run skips apply and bootstrap. Bootstrap needed a retry loop ("not available yet" while etcd prepares). Kubeconfig in git-ignored `_talos/lab-manager/kubeconfig`; **back up `secrets.yaml` and `talosconfig`**. Answers the template-version note: v1.14.5 is what landed. B5 next (Flux). |
+| B4 worker path | **Done**: throwaway `lab-test` = `lab-test-cp-1` 192.168.10.57 (VM 10057) + `lab-test-w-1` 192.168.10.58 (VM 10058), both Ready. With `--workers 1` the control-plane `NoSchedule` taint stays; 4 test pods all scheduled on the worker; worker `u-local-path-provisioner` volume ready. New script `hack/talos-apply-worker.sh <cluster> <workerIP>` (idempotent). **Not tested**: the MetalLB branch (no Flux on this cluster). VMs still running; PENDING rows in the terraform repo's `VLAN10-IP-ALLOCATION.md` (uncommitted). |
+| B5 SOPS bootstrap | **Done**: `lab-manager` added to `clusters.yaml` via PR #1 (merged to `main`, 6f17c18), `bootstrap/bootstrap.sh lab-manager` run. All 12 Flux kustomizations Ready on `main`; Contour envoy has LB IP `192.168.11.10`; `https://hello-manager.ellin.net` returns 200 with a Let's Encrypt cert and external-dns record. R1 (old bootstrap path still works) confirmed. Notes: age key `~/.config/sops/age/lab-manager.agekey` **must be backed up**; the MetalLB chart pull hit GitHub 504s for ~1h (Flux retried on its own). Epic C (image) next. |
+| C1 image | **Done**: built and pushed as `ellinj/talos-automation:dev` (Jeff, no Docker on the Pi). Files: | `image/Dockerfile` + `.dockerignore`: talosctl v1.14.5, kubectl v1.37.1, yq v4.54.3, sops v3.13.3, flux v2.10.0 (each verified against upstream checksums; the download block was run as a script on arm64 and passed), plus apt `age jq git curl nc openssl python3-yaml`, non-root uid 10001, the four `hack/` Talos scripts in `/usr/local/bin`. Platform layer (`bootstrap.sh`, `render.py`) is **not** baked in: jobs `git clone` the repo. **Jeff to run**: `docker build -f image/Dockerfile -t ellinj/talos-automation:dev .` then `docker run --rm ellinj/talos-automation:dev talosctl version --client`. |
+| C2 pipeline | `.github/workflows/talos-automation-image.yml` (push to main on image/scripts paths, tags `image-v*`, manual); pushes `:<sha>`, `:talos-v1.14.5`, `:latest`. **Jeff to add repo secrets** `DOCKERHUB_USERNAME` (= `ellinj`) and `DOCKERHUB_TOKEN`. Workflow only runs once merged to `main`. |
+| C3 job | **Done and proven**: `kubectl apply -f deploy/talos-automation/cluster-up-lab-test.yaml` on `lab-manager` created a Ready, untainted single-node Talos cluster `lab-test` (VM 10057, 192.168.10.57) in 2m34s; Secrets `lab-test-{talos-secrets,talosconfig,kubeconfig}` exist and the stored kubeconfig works. Re-run (delete + apply the Job) was a no-op: restored secrets, `VM 10057 exists, skipping`, apply and bootstrap skipped. Throwaway `lab-test` still running; delete the VM and its three Secrets when finished. Details: `hack/cluster-up.sh` (clone -> gen -> apply/bootstrap -> workers; restores/stores Talos secrets as `<name>-talos-secrets`, outputs `<name>-talosconfig`/`<name>-kubeconfig` Secrets; control flow tested with stubs, idempotent by construction). `deploy/talos-automation/cluster-up-lab-test.yaml` (Namespace, SA, Role, Job for `lab-test` single node at 192.168.10.57; server dry-run OK). Secret `talos-automation/proxmox-token` created on `lab-manager` (not in Git). **Jeff to rebuild/push `ellinj/talos-automation:dev`** (script added to the image), then `kubectl apply` the manifest on `lab-manager`. |
+| D1 Crossplane | **Done** (PR #2): `apps/crossplane`, Helm chart `crossplane` 2.4.x (installed 2.4.3) in `crossplane-system`, enabled for `lab-manager` only; 21 crossplane.io CRDs, all Kustomizations Ready. |
+| D2 functions + provider | **Done** (PR #3): `apps/crossplane-config` (function-go-templating v0.13.2, function-environment-configs v0.9.2, function-auto-ready v0.7.3, provider-kubernetes v1.4.1 with a fixed ServiceAccount bound to cluster-admin) and `apps/crossplane-providerconfig` (`ClusterProviderConfig/default`, `kubernetes.m.crossplane.io/v1alpha1`, InjectedIdentity). All Installed and Healthy. Main-bound work is done in the worktree `/home/jeff/homelab/k8s-platform-main`. D3 next. |
+| D3 EnvironmentConfig | **Done** (PR #4): `apps/crossplane-environment` -> `EnvironmentConfig/homelab` (one per Proxmox cluster, per-node settings inside; only `pve` + template `v1.14.5: 9100` for now). Secrets `proxmox-token` and `aws-credentials` created out of band in `talos-automation` on the manager (AWS from 1Password `r53-aws`). |
+| E1 XRD | **Done** (PR #5, merged): `apps/crossplane-api` XRD v2 namespaced `platform.ellin.net/v1alpha1 TalosCluster`, CEL: workerIPs==workers.count, IPs outside DHCP range, N->0 forbidden (`oldSelf` transition rule works; CEL cost needed maxLength/maxItems). Status fields must be declared in the XRD schema. |
+| E2 VM layer | **Done** (PR #6, merged): composition renders a clone Job per node via provider-kubernetes Object (ns talos-automation, from EnvironmentConfig + XR); status phase VMsCreating/VMsReady, vms ready/total; provider polls every 30s. Deleting the XR removes Jobs, NOT VMs (teardown = F3). Leftover test VMs 10064/10065 (e2test, 192.168.10.64/.65) reused for E3; not in allocation doc. Flux reverts hand-applied changes until PR merges. |
+| E3 Talos layer | **Done** (PR #7, merged; Flux `crossplane-api` resumed): once all VMs are cloned the composition renders a `talos-<name>` Job (runs idempotent `cluster-up.sh`, VM step is a no-op), then a `verify-<name>` Job (kubectl wait nodes Ready, count == CP+workers, using the emitted kubeconfig Secret). XR conditions `VMsReady`/`TalosReady`/`KubernetesReady` (function-go-templating v0.13.2 needs `kind: ClaimConditions`, not CompositeConditions); phases VMsCreating, TalosApplying, KubernetesVerifying, Ready; status names `<name>-kubeconfig`/`<name>-talosconfig` Secrets. Proven live with `e2test` (1 CP + 1 worker, VMs 10064/10065): Ready in ~6 min, CP tainted, worker untainted (so E5's basic N>0 path works; 0->1 on an existing cluster untested). Caveat: the Talos Job still holds the Proxmox token (cluster-up.sh clone check); a SKIP_VMS option needs an image rebuild. `e2test` XR, VMs and Secrets still exist; delete on Jeff's word (XR delete does not remove VMs, F3). |
+| E4 Platform layer | **Done** (PR #8, merged): after `KubernetesReady` a `platform-<name>` Job creates the cluster age key (Secret `<name>-age-key` on the manager, restored on re-run), copies the manager's `aws-credentials` into `cert-manager`/`external-dns`, runs the repo's `bootstrap/bootstrap.sh` (retrying; Flux Operator pinned in EnvironmentConfig `flux.operatorVersion`), and waits for all app Kustomizations. New condition `PlatformReady`; phases ... PlatformApplying, Ready. `clusters.yaml` gets `secrets: manager` (no SOPS files, no `<app>-secrets` Kustomizations; `render.py` tweak, SOPS-managed clusters render identically). Proven live on `e2test` (1 CP + 1 worker, `clusters.yaml` entry, MetalLB `192.168.11.20-29`): 9/9 Kustomizations Ready ~2m45s after Flux install, Envoy LB IP 192.168.11.20, `https://hello-e2test.ellin.net` 200 with a Let's Encrypt cert. Prereq: `clusters/<name>/` must already be on `main` (Job clones it). Not done: age public key in XR status (skipped, not needed with `secrets: manager`). `e2test` XR, VMs, Secrets still exist; delete on Jeff's word. Rows for e2test (192.168.10.64/.65, 192.168.11.20-29) still missing from the terraform repo's `VLAN10-IP-ALLOCATION.md`. |
+| E5 Workers N>0 | **Done** (PRs #9, #10 merged): proven on `e2test` (built with 1 worker) and `e2scale` (built with 0 workers, then 0 -> 1). 0 -> 1: XR change clones the worker, the Talos Job re-runs and joins it, and a new step re-applies the regenerated `controlplane.yaml` live (`--mode=no-reboot`) so the control plane gets its taint back (removing the taint block un-taints live too; the `exclude-from-external-load-balancers` label is already in the machine config). The LB IP 192.168.11.30 kept answering and `https://hello-e2scale.ellin.net` returned 200. `metallb_ignore_exclude_lb` is still a manual `clusters.yaml` edit + render (F8 automates it). **Gotcha:** Job pod templates are immutable, so Job/Object names carry `$rev` in the composition (now `r2`); bump it whenever a talos/verify/platform Job spec changes or existing clusters never get the change (an in-place change leaves the Object failing SSA dry-run and stuck deleting; clear its finalizer). The re-taint step is inline in the composition: move it into `hack/talos-apply-bootstrap.sh` at the next image rebuild. Leftovers: `e2test`, `e2scale` (VMs 10064-10067) and `lab-test` still exist; allocation rows added as PENDING to the terraform repo's `VLAN10-IP-ALLOCATION.md` (uncommitted). |
+| F3 Teardown | **Done** (PRs #11, #12 merged; design D15): `lab-test` destroyed with a one-off Job from the same ConfigMap (proved the token can delete VMs), then `e2scale` and `e2test` through the XR flow: delete refused with the explanation message -> `platform.ellin.net/teardown=true` -> teardown Job (workers first, then CP, then the 4 `<name>-*` Secrets) -> `phase: TornDown` in ~75s -> delete allowed. Proxmox now holds only `lab-manager`. Git-driven delete verified on `myapp` (teardown, then `--remove` PR, Flux prune of the XR through the delete protection, no issues). Teardown annotation placed in Git (quoted `"true"` under `metadata.annotations`) also verified on `f4test`. Not tested: the `allow-delete: keep-vms` override and re-creating a cluster by removing the teardown annotation. Idea: a `--teardown <name>` option on `new-talos-cluster.sh` that writes the annotation, and a CI `kubectl apply --dry-run=server` check on `apps/talos-clusters/*.yaml`. **Gotchas:** (1) Flux postBuild envsubst fails on `${VAR}` in a ConfigMap ("missing closing brace") and stops the whole `crossplane-api` kustomization: the ConfigMap carries `kustomize.toolkit.fluxcd.io/substitute: disabled` (PR #12). (2) Confirm a policy/CRD is actually applied before testing against it: a delete run before the policy existed removed the `e2scale` XR (recreated from the same spec, no data lost). (3) The Job only touches VMs named `<cluster>-(cp|w)-N` with tag `talos` and their own name in the tags; it refuses `lab-manager`. **Manual follow-ups for Jeff:** free `192.168.10.57/.58`, `.64/.65`, `.66/.67` and MetalLB `192.168.11.20-29` and `.30-39` in the terraform repo's `VLAN10-IP-ALLOCATION.md`; remove `e2test` and `e2scale` from `clusters.yaml`, run `hack/render.py` and delete `clusters/e2test/` and `clusters/e2scale/` (not done yet; tell Claude to open that PR). |
+| F4 Scaffold | **Done** (PR #13 script + `talos-clusters` app, PR #14 live test): `hack/new-talos-cluster.sh <name> [--workers N]` writes `apps/talos-clusters/<name>.yaml` (XR), the `clusters.yaml` entry (`secrets: manager`, `metallb_ignore_exclude_lb` only when workers == 0), rendered `clusters/<name>/`, and prints (or `--write-alloc` inserts) the allocation rows; auto-picks the lowest free CP/worker IPs and MetalLB block from the allocation doc's **table rows** (prose lines list free ranges and the whole subnet: ignored), the DHCP range, `clusters.yaml` and existing XRs; `--cp-ip/--worker-ips/--lb-range/--hello-host/--dry-run` override. `--remove <name>` is its exact inverse (round trip leaves no diff). Flux app `talos-clusters` (lab-manager only) applies the XR files, so merging the scaffold commit is the one commit. **Proven end to end:** merging PR #14 (`f4test`: CP 192.168.10.59 + worker .60, MetalLB 192.168.11.40-49) made Flux create the XR, which reached Ready in ~8 min with no manual step: CP tainted, worker untainted, MetalLB `ignoreExcludeLB: false`, Envoy LB IP 192.168.11.40, `hello-f4test.ellin.net` 200 with a Let's Encrypt cert (via `--resolve`; the Pi's resolver negative-caches new names for a while, 1.1.1.1 resolved at once). `f4test` still exists: tear down with the F3 flow, then `--remove f4test`. |
+| A5 fix `pve` vmbr1 netmask | **Open, Jeff to do** (see below) |
+| B1 clone script | **Done**: `hack/clone-talos-vm.sh` cloned VM 10056 (`lab-manager`, 192.168.10.56/22) from template 9100; Talos maintenance API answers on :50000; re-run prints "exists, skipping". Clone/write token rights verified. Lesson: VLAN 10 is the native LAN on vmbr1, so **no VLAN tag**. B2 done. B3 done. |
+
+### Action for Jeff: fix pve networking (A5)
+`pve`'s `vmbr1` is `192.168.8.2/24`; VLAN 10 is `192.168.8.0/22` and `/22` is correct. On `pve` (use the `192.168.1.52` session, not `192.168.8.2`):
+1. `grep -n -B2 -A8 'iface vmbr1' /etc/network/interfaces`
+2. Change the address to `192.168.8.2/22` (or `netmask 255.255.252.0`).
+3. `ifreload -a`, then `ip -br addr show vmbr1` should show `/22`.
+Check `pve2` for the same problem. Not a blocker for B1, but do it before relying on host-to-VM traffic; after B1, confirm `pve` can ping `192.168.10.56`.
+
+### Other notes carried forward
+- (Resolved in B3: the node runs Talos v1.14.5.) Template 9100 is named `talos-v1.14.4` in Proxmox (the guide says v1.14.5): was to confirm which version lands on disk after the first `apply-config` (installer image is v1.14.5).
+- The token ACL is broad (`/vms`); consider a Proxmox resource pool for Talos VMs after B1 works.
+- Pushing needs the SSH key in an agent in the same shell: `op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -`.
+
+---
+
+## Epic A: Foundations (no cluster changes)
+
+**A1. Push the plan branch** (S)
+As Jeff, I want the plan and docs in GitHub so they aren't only on this machine.
+- Do: commit the two untracked Talos docs, push `plan/crossplane-cluster-lifecycle`.
+- Done when: branch visible on GitHub. Demo: link to `docs/crossplane-cluster-lifecycle.md`.
+
+**A2. Prove manager-to-VLAN-10 reachability** (S) [manual-ish]
+As the bootstrapper, I need to reach new nodes on 50000/6443 from a pod on the manager.
+- Do: `kubectl run` a throwaway pod on `talos-test`; `nc -zv` an existing VLAN 10 host on 22 (stand-in) and, once a node exists, 50000.
+- Done when: pod reaches a VLAN 10 address; also reaches `factory.talos.dev`, `ghcr.io`/`docker.io`, `github.com`.
+- Demo: the `nc` output pasted in the doc.
+
+**A3. Create a scoped Proxmox API token** (S) [manual] **DONE 2026-11-08**
+As the Job, I need least-privilege API access to `pve`.
+- Do: create a role + token for clone/config/power/allocate on `pve`, `vmbr1`, the target storage and pool; store in 1Password.
+- Done when: `curl` with the token lists VMs and reads template 9100's config but cannot touch other things.
+- Demo: successful `GET /nodes/pve/qemu/9100/config`. Records the exact permission set (closes an open item).
+- Result: token `talos-provisioner@pve!bootstrapper` (privsep) works. Role `TalosProvisioner` = `VM.Allocate VM.Clone VM.Audit VM.PowerMgmt VM.Config.{CPU,Memory,Disk,Network,Cloudinit,Options} Datastore.{AllocateSpace,Audit} SDN.Use`, granted on `/vms`, `/storage/local-lvm`, `/sdn/zones/localnetwork` to **both the user and the token** (privsep needs both). Reads of template 9100, local-lvm and bridges vmbr0/vmbr1 verified. Clone/write permissions verified in B1. Token secret is in 1Password (to confirm).
+
+**A4. Reserve IP/ID and MetalLB range for `lab-manager`** (S) **DONE (rows added as PENDING, uncommitted in the `terraform` repo)**
+- Chosen: node `192.168.10.56` / VM ID `10056` / name `lab-manager` / Proxmox node `pve` / gateway `192.168.10.1` (/22); MetalLB `192.168.11.10-192.168.11.14`.
+As Jeff, I want the allocation settled before any VM exists (D2, D14).
+- Do: pick a node IP from the free VLAN 10 static range (e.g. `192.168.10.56` -> VM ID `10056`) and a MetalLB range (e.g. 5 addresses in `192.168.11.x`); add PENDING rows to `VLAN10-IP-ALLOCATION.md`.
+- Done when: doc updated. Demo: the diff.
+
+---
+
+## Epic B: Build `lab-manager` by hand-scripted steps (no Crossplane yet)
+
+These produce the scripts that later go into the image, and the result is the real manager cluster (single node, 0 workers: control plane schedulable, `metallb_ignore_exclude_lb: "true"`).
+
+**B1. Clone the `lab-manager` node from template 9100 with a script** (M) [manual run] **DONE**
+As the VM layer, I need an idempotent clone recipe.
+- Do: `hack/clone-talos-vm.sh` calling the Proxmox API/`qm` with the recipe from the design (net0 vmbr1/tag 10, ipconfig0, cores/mem, tags, data disk, start). Re-running with an existing VM ID is a no-op.
+- Needs: A3, A4.
+- Done when: VM 10056 (`lab-manager-cp-1` or just `lab-manager`) boots and the Talos dashboard shows maintenance mode at 192.168.10.56; `nc -zv 192.168.10.56 50000` works from the manager pod (also closes A2's 50000 check).
+- Demo: console screenshot + second run says "exists, skipping".
+
+**B2. Generate configs from a script** (M) **DONE**
+As the Talos layer, I need reproducible `secrets.yaml` and machine configs.
+- Do: `hack/talos-gen-config.sh <name> <cpIP> [--workers N]` using `talosctl gen secrets` / `gen config --with-secrets` with the 1.14 multi-doc patch (UnattendedInstallConfig + UserVolumeConfig), and a `yq` step that removes the control-plane taint when workers == 0.
+- Done when: running twice with the same `secrets.yaml` yields identical configs; `--dry-run apply` accepts them (use `talosctl validate`).
+- Demo: `talosctl validate --config controlplane.yaml --mode cloud`, and a diff showing the taint present/absent by worker count.
+
+**B3. Bring up `lab-manager` with scripts** (M) **DONE**
+As Jeff, I want the new single-node Talos cluster built from the scripts, not by hand.
+- Do: `hack/talos-apply-bootstrap.sh`: wait for 50000, `apply-config --insecure`, `bootstrap` once, `health`, write kubeconfig.
+- Needs: B1, B2.
+- Done when: `kubectl get nodes` on the new cluster shows Ready with no taints; script re-run is safe (does not re-bootstrap).
+- Demo: `kubectl get nodes -o wide` for the new cluster.
+
+**B4. Prove the worker path on a throwaway cluster** (M) **DONE (cluster `lab-test` still running; delete when finished)**
+`lab-manager` stays single-node, so test N > 0 with a disposable second cluster (reserve two more IPs) or defer it to Crossplane story E5.
+- Do: clone worker VM, apply `worker.yaml`; control plane becomes tainted again (regenerate without the `yq` step, apply, reboot, drain).
+- Done when: control plane has the NoSchedule taint and a test pod lands on the worker. Demo: `kubectl get nodes` + pod placement.
+
+**B5. Platform bootstrap on `lab-manager` (SOPS path)** (M) **DONE (2026-11-09)**
+As R1, I want the existing `bootstrap.sh` flow to work on this new cluster.
+- Do: `new-sops-cluster.sh lab-manager`, add `lab-manager` to `clusters.yaml` (apps as `talos-test`, with `external_dns_txt_id: lab-manager`, its own MetalLB range, `metallb_ignore_exclude_lb: "true"`), `seed-secrets.sh`, `render.py`, `bootstrap.sh lab-manager`. Add `hello-nginx` with a different host (e.g. `hello-manager.ellin.net`) to verify cert + DNS.
+- Needs: B3.
+- Done when: Flux syncs; core apps and the hello app Ready on `lab-manager`; the LoadBalancer IP answers.
+- Demo: `kubectl get kustomization -A` on `lab-manager` and `curl https://hello-manager.ellin.net`. (This is also the regression test that R1 still works.)
+
+**A5. (Optional) Fix `vmbr1` netmask on `pve`** (S) [manual]
+VLAN 10 is `/22`; `pve` has `vmbr1` at `192.168.8.2/24`. Change to `/22` in `/etc/network/interfaces`, `ifreload -a` (from the 192.168.1.52 session). Demo: `ip -br addr show vmbr1` shows `/22`; ping from `pve` to a VLAN 10 VM works.
+
+**B6. Teardown script, tested on a throwaway VM** (S)
+- Do: `hack/talos-destroy.sh <name>` (stop + purge VMs, remove local kubeconfig/secrets); test it on a disposable clone, **never on `lab-manager`**; update allocation rows.
+- Done when: the throwaway VM is gone and its IP is free. Demo: `qm list` before/after.
+
+---
+
+## Epic C: The bootstrapper image
+
+**C1. Build the image locally** (M) **DONE (Jeff built and pushed `ellinj/talos-automation:dev` on 2026-11-09)**
+As the Jobs, I need one image with the tools.
+- Do: Dockerfile with `talosctl` (pinned to 1.14.x), kubectl, yq, jq, curl, age, sops, flux CLI, and the `hack/` scripts + `bootstrap/` dir; non-root user.
+- Done when: `docker run ellinj/talos-automation:dev talosctl version --client` works and `bootstrap.sh --help`-style dry run works.
+- Demo: image size and tool versions.
+
+**C2. Publish with a pipeline** (M) [manual: Docker Hub token] **WORKFLOW WRITTEN; needs the two repo secrets and to be on `main`**
+- Do: GitHub Actions workflow building on tag/main and pushing `ellinj/talos-automation:<sha>` and `:v1.14.5`-style tags.
+- Done when: a push produces an image visible on Docker Hub.
+- Demo: Docker Hub tag list. (Resolves the "build method" open item.)
+
+**C3. Run steps B1-B3 from the image** (M) **DONE (2026-11-09): the mechanism works from a Job**
+- Do: run the image as a plain `kubectl run`/Job on the manager with the Proxmox token and a Talos secrets Secret mounted; execute clone -> gen -> apply -> bootstrap.
+- Needs: B3, C2, A3.
+- Done when: a fresh single-node cluster appears from `kubectl apply -f job.yaml` alone.
+- Demo: Job logs end in "cluster ready"; kubeconfig Secret exists on the manager. **This is the milestone that proves the whole mechanism before any Crossplane CRD.**
+
+---
+
+## Epic D: Crossplane on the manager
+
+**D1. Install Crossplane on `lab-manager`** (M) **DONE (PR #2, 2026-11-09)**
+- Do: `apps/crossplane` (Helm), enabled for `lab-manager` in `clusters.yaml` on a branch; `talos-test` is not touched.
+- Done when: Flux applies it after merge; `kubectl get pods -n crossplane-system` healthy on `lab-manager`; its other Kustomizations still Ready.
+- Demo: pods + Kustomizations on `lab-manager`.
+
+**D2. Install functions + provider-kubernetes** (S) **DONE (PR #3, 2026-11-09)**
+- Do: `apps/crossplane-config`: `function-go-templating` (or KCL), `function-environment-configs`, `function-auto-ready`, provider-kubernetes with a ProviderConfig for the local cluster.
+- Done when: packages report Healthy. Demo: `kubectl get functions,providers`.
+
+**D3. The `EnvironmentConfig` + credentials Secrets** (S) [manual: secrets] **DONE (PR #4, 2026-11-09)**
+- Do: `EnvironmentConfig homelab` (endpoint, nodes, templates, network); seed `proxmox-api` token Secret and the AWS credentials Secret on `lab-manager` via an extended `hack/seed-secrets.sh` from 1Password.
+- Done when: both exist; no secret values in git. Demo: `kubectl get environmentconfig homelab -o yaml` and Secret key names.
+
+---
+
+## Epic E: The `TalosCluster` API
+
+**E1. XRD + no-op composition** (M)
+- Do: `TalosCluster` XRD (namespaced) with the spec sketch and CEL validations (worker IP count, DHCP range, N->0 guard); a composition that only renders status.
+- Done when: a valid XR is accepted; invalid ones are rejected (wrong IP count, IP in DHCP range, workers 2 -> 0).
+- Demo: three `kubectl apply` attempts with the exact rejection messages. (Closes the CEL-transition-rule VERIFY.)
+
+**E2. VM layer via composition** (M)
+- Do: composition creates the clone Job per node from the EnvironmentConfig + XR (the C3 image, B1 script).
+- Done when: applying an XR creates the VMs; deleting the XR with the protection annotation absent is refused/handled per design.
+- Demo: VMs appear in Proxmox with correct names, IDs, tags; re-applying changes nothing.
+
+**E3. Talos layer via composition** (L) **DONE (PR #7)**
+- Do: Jobs for gen-secrets/gen-config/apply/bootstrap; status conditions `VMsReady`, `TalosReady`, `KubernetesReady`; kubeconfig + talosconfig Secrets emitted.
+- Done when: an XR with `workers.count: 0` produces a Ready, untainted single node.
+- Demo: `kubectl get talosclusters` shows READY=True; kubectl against the emitted kubeconfig works.
+
+**E4. Platform layer via composition** (L) **DONE (PR #8)**
+- Do: final Job: age key, `sops-age` + AWS credentials into the new cluster, Flux Operator + FluxInstance (reusing `bootstrap.sh`); `PlatformReady`.
+- Needs: D3, B5 knowledge.
+- Done when: the new cluster syncs `clusters/<name>/` and core apps go Ready with no manual steps.
+- Demo: the one-commit story end to end for a 0-worker cluster (with `clusters.yaml` entry + allocation rows committed alongside).
+
+**E5. Workers N > 0** (M) **DONE (PR #10)**
+- Do: composition handles worker VMs, worker config, re-tainting the control plane and `ignoreExcludeLB=false`.
+- Done when: XR with 2 workers yields 3 Ready nodes, control plane tainted; changing 0 -> 1 on an existing cluster works, including the MetalLB setting flipping (see below).
+- Rule: with workers > 0 the control plane keeps the `node.kubernetes.io/exclude-from-external-load-balancers` label and MetalLB runs with `ignoreExcludeLB: false`, so workers serve LoadBalancer IPs. With workers = 0, `ignoreExcludeLB: true` and the control plane must serve them. (Speaker pods run on every node either way; the check is which nodes announce, not where pods run.) Already seen for N>0 on `e2test`: label present on the CP, absent on the worker, values `{"speaker":{"ignoreExcludeLB":false}}`.
+- Demo (done on e2scale): `kubectl get nodes` (taint + label), the rendered MetalLB values for N=0 (true) and N>0 (false), and the LB IP answering in both cases. For 0 -> 1: the values flip and the IP keeps answering. `metallb_ignore_exclude_lb` lives in `clusters.yaml`, so for E5 the flip is a manual `clusters.yaml` edit + render; driving it from the XR is F8. Test cluster: `e2scale` (CP 192.168.10.66, worker 192.168.10.67, MetalLB 192.168.11.30-39).
+
+---
+
+## Epic F: Day-2 and polish
+
+**F1. Scale-down N -> M (M > 0)** (M): reducing workers (e.g. 4 -> 3) must never just delete a VM. Per removed worker, highest index first: cordon, **drain** (`--ignore-daemonsets --delete-emptydir-data`, respect PodDisruptionBudgets, bounded timeout), `talosctl reset --graceful` (leaves etcd/cluster cleanly), `kubectl delete node`, then power off and delete the VM. Order matters: the composition must stop dropping the VM resource as soon as `workerIPs` shrinks; it should hold the VM until the drain Job succeeds (Job per removed node, gated and idempotent like the other layers, with a `$rev`-style name). Open points: local-path volumes pin pods to their node (a drain can't reschedule them: warn/refuse unless an annotation allows data loss), PDBs that block the drain (fail the XR with a clear condition instead of forcing), and the IP/VM ID being freed (allocation-doc reminder). New condition e.g. `ScalingDown`. Demo: 4 -> 3 workers on a test cluster with workloads intact, node drained before the VM disappears; a blocked drain leaves the node cordoned and reports why.
+**F2. Upgrades** (M): `talosVersion` bump triggers `talosctl upgrade` node by node (etcd snapshot first). Demo: v1.14.5 -> next patch on a test cluster.
+**F3. Deletion protection and two-step teardown** (M) **DONE (PRs #11, #12)** (design: lifecycle doc D15 / section 8.1): (1) `ValidatingAdmissionPolicy` + binding on `DELETE` of `talosclusters` in `apps/crossplane-api`: allowed only when `status.phase == TornDown` or `allow-delete == keep-vms`, otherwise a message explaining the two steps. (2) Destroy script in a ConfigMap (`apps/crossplane-api`), mounted into a Job: Proxmox stop + purge, only VMs tagged `talos` + `<name>` with matching name/ID, refuses the manager cluster, deletes the four `<name>-*` Secrets, prints the allocation-doc rows to free. (3) Composition: `platform.ellin.net/teardown: "true"` drops the other layers, renders `teardown-<name>-<rev>`, sets `phase: TornDown` and conditions False. Test order: `lab-test` (VMs 10057/10058, one-off Job from the same ConfigMap; also proves the token can delete VMs), then `e2scale` (delete blocked -> teardown -> delete allowed), then `e2test`. Demo: blocked delete message, `qm list` before/after, Secrets gone, XR deleted. Folds in B6 (teardown script).
+**F4. `hack/new-talos-cluster.sh`** (S) **DONE (PRs #13, #14)**: scaffolds XR + `clusters.yaml` entry + allocation rows. Demo: scaffold output for a new cluster name.
+**F8. Drive MetalLB `ignoreExcludeLB` from the XR** (M): today `metallb_ignore_exclude_lb` is set by hand in `clusters.yaml` (true when workers == 0, false otherwise), while the XR already computes it (`status.metallbIgnoreExcludeLB`). Make the XR the source so a 0 -> 1 worker change flips it with no `clusters.yaml` edit. Likely done together with F5 (the XR/`spec.platform.apps` generates `clusters/<name>/`) since the value reaches Flux through the ResourceSet; changing it later is not a big deal because E5 only needs the manual edit. Demo: change `workers.count` 0 -> 1 on a live cluster and see the MetalLB values flip and the LB IP keep answering.
+**F9. One-step delete via finalizer controller** (M): a finalizer on the XR plus a small controller Deployment on the manager that runs the F3 destroy logic when an XR is deleted, then removes the finalizer, so `kubectl delete` (after `allow-delete`) does everything. Trade-offs in lifecycle doc section 8.1; do it after F3 has proven the destroy script. Longer term: a native Proxmox provider makes this unnecessary. Demo: one delete removes the XR and its VMs.
+**F10. Shrink rendered ResourceSets** (S): `clusters/<name>/resourceset.yaml` repeats the full variable set (`cert_email`, `aws_region`, `zone_id`, `external_dns_txt_id`) in every app input (about 60% of a 96-line file) and the same Kustomization template in every cluster. Idea: `render.py` emits one `cluster-vars` ConfigMap per cluster (same path, so it exists before the apps) and the app Kustomizations read it with `postBuild.substituteFrom`, leaving only per-app options in the inputs. Also check whether the Flux Operator `ResourceSet` can take inputs from another resource, which could drop the merge step. Not verified. Independent of F5 (which would generate this from the XR); reduces diff noise for both paths. Demo: same cluster renders to a fraction of the size, apps still Ready, `render.py --check` clean.
+**F11. Rebuild and automate the `lab-manager` build** (M, later): `docs/lab-manager-build-runbook.md` builds a manager from scratch by hand. Next step is a repeatable rebuild after loss. (1) Put the `talos-automation` namespace and the `cluster-up` ServiceAccount/Role/RoleBinding into Git (`apps/crossplane-api` or a small new app) instead of the hand-applied `deploy/talos-automation/cluster-up-lab-test.yaml`, which also contains a lab-test Job. (2) A seed script for `proxmox-token` and `aws-credentials` (from 1Password). (3) Decide how a rebuilt manager takes over existing child clusters: it needs their `<name>-talos-secrets/-talosconfig/-kubeconfig/-age-key` Secrets back (from a Proxmox snapshot restore, or an encrypted export; the pipeline `kubectl -n talos-automation get secrets -o json | jq ... | age -r <admin pub>` was tested as a server-side dry run), otherwise tear the children down and recreate them. (4) Rehearse the whole runbook on a throwaway cluster and fix it. (5) Confirm where the Proxmox token secret is kept. Demo: wipe a test manager, rebuild it from the runbook, children return to Ready.
+**F12. `new-talos-cluster.sh --teardown <name>`** (S): writes `platform.ellin.net/teardown: "true"` into `apps/talos-clusters/<name>.yaml` (inside `metadata.annotations`, value a quoted string), refuses if the file or cluster is missing, and prints the next steps (merge, wait for `PHASE=TornDown`, then `--remove <name>`). Optional `kubectl apply --dry-run=server` check of the result when a manager kubeconfig is available. Reason: the hand-edit went wrong three ways on `f4test` (annotations outside `metadata`, unquoted `true`, a stray comma). Demo: run it on a throwaway cluster, PR, Flux applies it, teardown runs.
+**F13. DNS cleanup on teardown** (S-M): a destroyed cluster's external-dns can no longer remove its Route53 records, so `hello-<name>.ellin.net` A and TXT (owner id `<name>`) records are likely left behind. Not yet verified: first check Route53 for stale records from `e2test`, `e2scale`, `myapp` and `f4test`. Options: (a) before the VMs are destroyed, the teardown Job uses the cluster's kubeconfig to delete its Ingresses/records and waits for external-dns to sync; (b) the teardown Job deletes records in zone `ZM4W2IR7IZJ3M` itself, filtered by TXT owner `<name>` (needs `aws-credentials` mounted into the Job and `route53:ListResourceRecordSets` / `ChangeResourceRecordSets`). Decide (a) vs (b). Demo: after teardown no records owned by `<name>` remain.
+**F14. Verify the untested teardown paths** (S): (1) `allow-delete: keep-vms`: the object is deleted, VMs and Secrets stay, and document how to destroy or adopt them afterwards (the destroy script by hand); (2) recreate a cluster by removing the teardown annotation: fresh VMs, a new Talos identity because the Secrets are gone, no stale Objects; (3) teardown of a cluster still building; (4) a failed teardown (Proxmox error) leaves the XR in `TearingDown`: is the retry and the message clear? Run each on a throwaway cluster, then write the results into `docs/talos-cluster-runbook.md`.
+**F15. Housekeeping** (S, mostly Jeff): ~~merge the plan branch into `main`~~ done 2026-11-09 (two trivial conflicts: `.gitignore`, `README.md`); add the repo secrets `DOCKERHUB_USERNAME` (`ellinj`) and `DOCKERHUB_TOKEN` so the image workflow runs from `main`; commit the allocation-doc rows in the terraform repo (and free the finished test clusters' rows); fix `pve` `vmbr1` netmask to `/22` (A5); decide the fate of `deploy/talos-automation/cluster-up-lab-test.yaml` (its namespace and RBAC move to Git under F11; its lab-test Job is spent and must not be re-applied: `lab-test`'s IP was reused).
+**F16. PR checks** (S-M): nothing validates a PR today, and two real mistakes got through: a malformed XR file on `main` (annotations outside `metadata`, an unquoted `true`, a stray comma) that stalled the `talos-clusters` Kustomization, and renders that were forgotten (`render.py` has a `--check` mode, but no CI runs it). A GitHub Actions workflow on pull requests to `main`: (1) `python3 hack/render.py --check` (needs `pyyaml`; fails when committed `clusters/` or `.sops.yaml` is stale or a declared SOPS secret is missing/unencrypted); (2) YAML parse of every `apps/**` and `clusters/**` file plus `kubectl kustomize` of each app directory; (3) validate the `TalosCluster` files in `apps/talos-clusters/*.yaml` against the XRD schema: a server-side dry run needs the manager, which is not reachable from GitHub-hosted runners, so options are a self-hosted runner on the Pi, or an offline check (`kubeconform`/`yq` against the XRD's OpenAPI schema plus a string-type check of annotations) run in the workflow; (4) `bash -n` / `shellcheck` on `hack/*.sh` and `apps/*/*.sh`. Optionally also a pre-commit hook for the same checks. Demo: a PR with a bad XR file and a stale render fails the check; a good one passes. Note it also needs the plan branch merged to `main` (F15) to live next to the scripts it runs.
+**F7. Retire `talos-test` as manager** (S): once E4 works on `lab-manager`, remove `talos-test` from `clusters.yaml` (or keep as a scratch cluster), stop external-dns there, release VM 155 / 192.168.1.155 in `IP-ALLOCATION.md`. Demo: allocation diff.
+**F5. Collapse `clusters.yaml` into the XR / `render.py` tweak for manager-supplied secrets** (M): see design section 5.3. Demo: render passes for an XR-built cluster with no SOPS files for AWS creds.
+**F6. Backups of `lab-manager`** (S): **plan (Jeff, 2026-11-09): Proxmox VM snapshots of VM 10056** (its etcd and the manager-side Secrets live on that VM's disks). Open: snapshot schedule/retention, who runs it (Proxmox backup job vs script), and a tested restore. An etcd snapshot (`talosctl etcd snapshot`) is an optional extra. Demo: a restored snapshot boots a working manager.
+
+---
+
+## Suggested first sprint (smallest path to a visible win)
+
+A1 -> A3 -> A4 -> B1 -> B2 -> B3. Outcome: a second single-node Talos cluster on VLAN 10 built entirely from scripts, with
+no Crossplane involved yet. This validates the clone recipe, the 1.14 config patch and the taint handling, which are the riskiest assumptions.
+Then C1-C3 for the "one Job builds a cluster" milestone (build a throwaway cluster, not `lab-manager`), then Epic D on `lab-manager`.
