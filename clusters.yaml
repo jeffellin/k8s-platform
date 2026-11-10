@@ -75,22 +75,3 @@ clusters:
       - name: hello-nginx
         options:
           hello_host: hello-f4test.ellin.net
-
-  myapp:                              # Crossplane-built Talos cluster (XR apps/talos-clusters/myapp.yaml): CP 192.168.10.57, 2 worker(s)
-    secrets: manager
-    vars:
-      external_dns_txt_id: myapp
-    apps:
-      - name: metallb
-      - name: metallb-config
-        options:
-          metal_lb_address_pool: 192.168.11.15-192.168.11.24
-      - name: local-path-provisioner
-      - name: metrics-server
-      - name: contour
-      - name: cert-manager
-      - name: cluster-issuers
-      - name: external-dns
-      - name: hello-nginx
-        options:
-          hello_host: hello-myapp.ellin.net
