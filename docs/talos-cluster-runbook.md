@@ -126,9 +126,13 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
    (for example to hand the VMs to something else). The VMs and Secrets stay behind; you own them.
 
 **Verified on `myapp` (2026-11-09):** teardown, then removal from Git, then Flux's prune of the XR worked with no issues: the XR, its Jobs and its Secrets are gone, the VMs are
-gone from Proxmox, and `talos-clusters` stayed Ready (the delete protection let the prune through because the XR was `TornDown`). Not yet verified: putting the
-`teardown` annotation in the XR file in Git instead of using `kubectl annotate`, the `allow-delete: keep-vms` override, and recreating a cluster by removing the teardown
-annotation. Still manual afterwards: the allocation doc rows and stale Route53 records.
+gone from Proxmox, and `talos-clusters` stayed Ready (the delete protection let the prune through because the XR was `TornDown`). Also verified on `f4test`: putting the `teardown` annotation in the XR file in Git (`metadata.annotations`, value **quoted** `"true"`) and merging it makes Flux apply it and the teardown run to `TornDown`.
+Not yet verified: the `allow-delete: keep-vms` override, and recreating a cluster by removing the teardown annotation.
+
+**YAML traps hit while doing it:** `annotations:` belongs *inside* `metadata` (at the top level Flux rejects the file: `.annotations: field not declared in schema`); the value must be a
+quoted string (`true` unquoted is a boolean and fails to decode); a block-style `name: f4test,` keeps the comma in the name. Check a file before pushing it:
+`kubectl apply --dry-run=server -f apps/talos-clusters/<name>.yaml`. A rejected file leaves the cluster untouched but stalls `talos-clusters` on the old revision, and a burst of commits to `main`
+keeps the dependency chain (`crossplane` -> `crossplane-config` -> `crossplane-api` -> `talos-clusters`) showing `DependencyNotReady` until it catches up; kick the stalled Kustomizations with the reconcile annotation. Still manual afterwards: the allocation doc rows and stale Route53 records.
 
 ## 4. Onboard an existing cluster (SOPS path)
 
