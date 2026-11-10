@@ -28,10 +28,9 @@ clusters. This runbook builds one **from nothing** (Part A: the Talos node) and 
 
 Do these while the old manager is still running. Anything that exists only on it is lost with its disks.
 
-1. **Save the Proxmox token secret.** It lives only in Secret `proxmox-token` (see Prerequisites). Copy it somewhere you control (a new 1Password item named for the token id
-   `talos-provisioner@pve!bootstrapper`) without printing it into a shared terminal:
+1. **Save the Proxmox token secret.** It lives only in Secret `proxmox-token` (see Prerequisites). Copy it somewhere you control: a new 1Password item named for the token id `talos-provisioner@pve!bootstrapper`. Write it to a temporary file, paste it into 1Password by hand, then delete the file:
    ```bash
-   kubectl -n talos-automation get secret proxmox-token -o jsonpath='{.data.PVE_TOKEN_SECRET}' | base64 -d | op item create --category=password --title='Proxmox talos-provisioner!bootstrapper' --vault=HomeLab 'password[password]=-' 2>/dev/null || echo "adapt to your op version"
+   kubectl -n talos-automation get secret proxmox-token -o jsonpath='{.data.PVE_TOKEN_SECRET}' | base64 -d > ~/token.tmp   # copy into 1Password, then: shred -u ~/token.tmp
    ```
    **If it is already lost, make a new token.** On `pve` (reconstructed from backlog A3, untested): the role and the ACLs for **both the user and the token** (privilege separation needs both):
    ```bash
