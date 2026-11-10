@@ -53,6 +53,51 @@ What is **not** lost, verified 2026-11-09: the SOPS files and keys in Git (the a
 (`talos-v1.14.4`, installs v1.14.5), and everything Flux deploys. The audit of hand-made state on the manager found only: namespace `talos-automation`, ServiceAccount/Role/RoleBinding `cluster-up`,
 Secrets `proxmox-token` and `aws-credentials`, and a finished `cluster-up-lab-test` Job. (An empty namespace `clusters` also exists; it is not needed.) No hand-made cluster-wide RBAC.
 
+## Exercise: zero-state rebuild (new VM, new Talos identity, new age key, new Proxmox token)
+
+The full "nuke it and start fresh" path, in the order that works. The order matters because a new age key changes files in Git (step 3), and the Proxmox token and the Talos
+identity are created fresh. Allow 45-60 minutes. Unchanged on purpose: template 9100, the Docker Hub image, `op://HomeLab/r53-aws`, and `talos-test` (its own Flux and key).
+Success: all Flux Kustomizations Ready, `hello-manager.ellin.net` 200, and the new manager builds and tears down a throwaway cluster by itself (step 8).
+
+1. **Prepare.** Merge the removal of any child XR, so `apps/talos-clusters/` holds only `kustomization.yaml` and `meta.yaml` (a new manager would otherwise rebuild them; today `f4test.yaml` is still there).
+   Optional safety net, on `pve`: `vzdump 10056 --storage <backup-storage> --mode snapshot`.
+2. **Destroy the old state.**
+   ```bash
+   # on pve: the VM and its disks
+   qm stop 10056 && qm destroy 10056 --purge
+   # on the Pi: the old Talos identity and the old age key (moved, not deleted, until you are done)
+   mv ~/homelab/k8s-platform/_talos/lab-manager ~/lab-manager-talos.old
+   mv ~/.config/sops/age/lab-manager.agekey ~/lab-manager.agekey.old
+   ```
+3. **New age key, re-encrypted secrets, merged to `main` BEFORE the new Flux starts.** From a worktree of `main` on a new branch:
+   ```bash
+   hack/new-sops-cluster.sh lab-manager     # no key on disk now, so it creates a NEW one and writes keys/lab-manager.pub; renders with --allow-incomplete
+   hack/seed-secrets.sh lab-manager         # re-encrypts the AWS secrets to admin + the NEW key, from op://HomeLab/r53-aws
+   hack/render.py                           # strict
+   ```
+   **Verify the secrets really use the new key** (the strict render only checks that a `sops:` block exists, so a file still encrypted to the old key passes):
+   ```bash
+   git status --short                       # keys/lab-manager.pub, .sops.yaml and both aws-credentials.sops.yaml must show as modified
+   for f in clusters/lab-manager/secrets/*/aws-credentials.sops.yaml; do
+     SOPS_AGE_KEY_FILE=~/.config/sops/age/lab-manager.agekey sops -d $f >/dev/null && echo "decrypts with the new key: $f"; done
+   ```
+   Commit and merge (PR). Back up the new `~/.config/sops/age/lab-manager.agekey` (1Password) now: you have no other copy.
+4. **New Proxmox token** (on `pve`; the commands in "Before you delete the old VM", item 1: the role is already there, so the token remove/add and the two ACL lines are what you need).
+   Save the printed secret in a new 1Password item at once: it is shown only once.
+5. **Build the node** (Part A below), with `export PVE_TOKEN_SECRET=<the new secret>` and **no** `$OUT` (the old directory was moved, so `talos-gen-config.sh` creates fresh Talos secrets).
+   Back up `$OUT/secrets.yaml` and `talosconfig` if you care about this cluster's identity.
+6. **Out-of-band state** (Part B step 3): namespace and `cluster-up` RBAC, `proxmox-token` with the new secret, `aws-credentials` from 1Password.
+7. **Bootstrap** (Part B step 4), pinned: `FLUX_OPERATOR_VERSION=v0.62.1 ... bootstrap/bootstrap.sh lab-manager`. It will use the new age key; the files merged in step 3 decrypt with it.
+8. **Verify, then prove it** (Part B step 5): then `hack/new-talos-cluster.sh test1 --workers 1`, merge, watch it reach `Ready`, tear it down (annotation in Git, then `--remove`).
+9. **Clean up** only after step 8 passes: delete `~/lab-manager-talos.old` and `~/lab-manager.agekey.old`, free the throwaway cluster's allocation rows, and write down every surprise here.
+
+**What can go wrong, in order of likelihood**
+- Flux on the new manager cannot decrypt the secrets: step 3 was merged with files still encrypted to the old key. Check with the `sops -d` loop above, redo `seed-secrets.sh`, merge again, then kick Flux.
+- The clone or Jobs fail with a Proxmox 401/403: the new token lacks the ACL lines for the **token** (not only the user).
+- `hack/talos-*.sh` not found: you are in the checkout on `main`; use the plan-branch worktree (Part A).
+- GitHub release downloads return 504 (Flux Operator install, MetalLB chart): retry; Flux retries on its own.
+- Let's Encrypt re-issues `hello-manager.ellin.net`: fine (the limit is five duplicate certificates a week).
+
 ## A. Build the Talos node (the dial tone)
 
 The Talos scripts live only on the plan branch until it is merged to `main` (backlog F15), and the primary checkout is on `main`. Use a worktree of the plan branch, and point the
