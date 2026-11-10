@@ -1,0 +1,41 @@
+# One EnvironmentConfig per Proxmox *cluster* (one API endpoint + token). Per-node settings live inside.
+# Read by the TalosCluster composition via function-environment-configs. No secret values here:
+# the token is referenced by Secret name; the Secret is created out of band (not in Git).
+#
+# Templates: a full clone to another node needs shared storage, and local-lvm is not shared, so each node
+# that hosts Talos VMs needs its own template. Only `pve` has one today (VM 9100, installs Talos v1.14.5).
+# Add pve2/pve3 entries when templates are built there (hack/build-talos-template.sh).
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata: {name: homelab}
+data:
+  proxmox:
+    endpoint: https://192.168.1.52:8006/api2/json
+    tokenSecretRef: {namespace: talos-automation, name: proxmox-token}   # keys PVE_ENDPOINT, PVE_TOKEN_ID, PVE_TOKEN_SECRET
+    insecureTLS: true            # self-signed certificate
+    defaultNode: pve
+    nodes:
+      pve:
+        storage: local-lvm
+        bridge: vmbr1
+        templates:
+          v1.14.5: 9100
+  network:
+    prefix: 22                   # VLAN 10 = 192.168.8.0/22 (native on vmbr1, no VLAN tag)
+    gateway: 192.168.10.1
+    dns: 192.168.10.1
+    searchDomain: ellin.net
+  vm:
+    cores: 4
+    memoryMiB: 8192
+    systemDiskGiB: 64
+    dataDiskGiB: 50
+  talos:
+    version: v1.14.5
+    schematic: 88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    image: ellinj/talos-automation:dev
+  git:                           # repo the new cluster's Flux syncs (clusters/<name>/ must already be committed)
+    url: https://github.com/jeffellin/k8s-platform.git
+    branch: main
+  flux:
+    operatorVersion: v0.62.1     # what lab-manager runs

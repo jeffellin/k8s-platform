@@ -1,0 +1,19 @@
+# Used by the teardown Job and by hand-run destroy Jobs: may only delete a cluster's Secrets in talos-automation.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: cluster-down, namespace: talos-automation}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: cluster-down, namespace: talos-automation}
+rules:
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: cluster-down, namespace: talos-automation}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: cluster-down}
+subjects:
+- {kind: ServiceAccount, name: cluster-down, namespace: talos-automation}

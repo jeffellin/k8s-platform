@@ -4,3 +4,6 @@ creation_rules:
 - path_regex: clusters/talos-test/secrets/.*\.sops\.yaml$
   encrypted_regex: ^(data|stringData)$
   age: age1757mvjuauwxdtj230h8n6gy87v2x5v9pp86nttr0486frsed45mq5fm4je,age1cx2305lv43l7ejmh0zzqztxh432k0gyjw666y8fdgg5qw3hu8s3sxsn2aj
+- path_regex: clusters/lab-manager/secrets/.*\.sops\.yaml$
+  encrypted_regex: ^(data|stringData)$
+  age: age1757mvjuauwxdtj230h8n6gy87v2x5v9pp86nttr0486frsed45mq5fm4je,age1fvysfdmpqvp8l8st0ekfmhrwpxx3n0fsq8af7rkqwszmg6ff997qprdvuc

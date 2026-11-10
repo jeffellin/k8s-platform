@@ -2,7 +2,7 @@
 # Edit this, then run `hack/render.py` and commit the generated clusters/<name>/ files.
 # Each app's name matches a directory under apps/. Ordering comes from apps/<app>/meta.yaml.
 repo:
-  url: https://github.com/jeffellin/k8s-platform-.git
+  url: https://github.com/jeffellin/k8s-platform.git
   branch: main
 
 defaults:
@@ -31,3 +31,28 @@ clusters:
       - name: hello-nginx
         options:
           hello_host: hello.ellin.net
+  lab-manager:                      # single-node Talos VM 10056 (192.168.10.56, VLAN 10); the Crossplane manager
+    vars:
+      external_dns_txt_id: lab-manager
+    apps:
+      - name: metallb
+        options:
+          metallb_ignore_exclude_lb: "true"   # single node: the control plane must serve LoadBalancer IPs
+      - name: metallb-config
+        options:
+          metal_lb_address_pool: 192.168.11.10-192.168.11.14
+      - name: local-path-provisioner
+      - name: metrics-server
+      - name: contour
+      - name: cert-manager        # needs secrets/cert-manager/aws-credentials.sops.yaml
+      - name: cluster-issuers
+      - name: external-dns        # needs secrets/external-dns/aws-credentials.sops.yaml
+      - name: hello-nginx
+        options:
+          hello_host: hello-manager.ellin.net
+      - name: crossplane          # the cluster manager; enabled only here
+      - name: crossplane-config   # functions + provider-kubernetes
+      - name: crossplane-providerconfig   # ClusterProviderConfig (needs the provider's CRDs)
+      - name: crossplane-environment      # EnvironmentConfig `homelab` (Proxmox settings for TalosCluster)
+      - name: crossplane-api               # TalosCluster XRD + composition
+      - name: talos-clusters               # TalosCluster XRs (apps/talos-clusters/*.yaml, managed by hack/new-talos-cluster.sh)

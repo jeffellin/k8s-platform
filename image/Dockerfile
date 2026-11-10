@@ -52,7 +52,7 @@ RUN set -eux; \
 FROM debian:trixie-slim
 LABEL org.opencontainers.image.title="talos-automation" \
       org.opencontainers.image.description="Clones Proxmox Talos VMs, generates/applies Talos configs, bootstraps Flux" \
-      org.opencontainers.image.source="https://github.com/jeffellin/k8s-platform-"
+      org.opencontainers.image.source="https://github.com/jeffellin/k8s-platform"
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl jq git age netcat-openbsd openssl python3 python3-yaml \
  && rm -rf /var/lib/apt/lists/*

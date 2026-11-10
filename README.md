@@ -9,4 +9,4 @@ Declarative addons for homelab clusters with Flux + Flux Operator + Kustomize (n
 
 Add a cluster: list it + its apps in `clusters.yaml`, `hack/new-sops-cluster.sh <name>` (keys + secret skeletons),
 encrypt the secrets, `hack/render.py`, commit/push, `KUBECONFIG=... bootstrap/bootstrap.sh <name>`. See docs/secrets.md.
-(This is the SOPS path, used by `lab-manager` and `talos-test`. Clusters built by Crossplane use `hack/new-talos-cluster.sh` (on `main`) instead and need no keys.)
+(This is the SOPS path, used by `lab-manager` and `talos-test`. Clusters built by Crossplane use `hack/new-talos-cluster.sh` instead and need no keys.)
