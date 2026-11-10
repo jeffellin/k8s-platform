@@ -1,5 +1,4 @@
 # TalosCluster XRs, one file per cluster. Managed by hack/new-talos-cluster.sh (add/--remove); enabled on lab-manager only.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources:
-- f4test.yaml
+resources: []
