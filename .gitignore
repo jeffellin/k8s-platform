@@ -2,3 +2,4 @@
 kubeconfig*
 *.tfstate*
 _talos/
+*.swp

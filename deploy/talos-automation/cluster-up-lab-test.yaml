@@ -1,0 +1,65 @@
+# !!! DO NOT apply this whole file again. The Job at the bottom builds a cluster named `lab-test` at 192.168.10.57, which has since been destroyed and whose IP/VM ID 10057 may be reused.
+# !!! The Namespace/ServiceAccount/Role/RoleBinding (first four objects) are still required by the Crossplane composition's Jobs and are NOT defined anywhere else in Git yet
+# !!! (backlog F11): apply those four objects only, e.g. see docs/lab-manager-build-runbook.md, Part B step 3.
+# C3 demo: create a throwaway single-node Talos cluster `lab-test` from the manager.
+# Needs (not in Git): Secret talos-automation/proxmox-token with PVE_ENDPOINT, PVE_TOKEN_ID, PVE_TOKEN_SECRET.
+#   kubectl apply -f deploy/talos-automation/cluster-up-lab-test.yaml
+#   kubectl -n talos-automation logs -f job/cluster-up-lab-test
+# To add workers set WORKER_IPS="192.168.10.58,..." (the VMs must have reserved IPs). Delete the Job to re-run.
+apiVersion: v1
+kind: Namespace
+metadata: {name: talos-automation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: cluster-up, namespace: talos-automation}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: cluster-up, namespace: talos-automation}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: cluster-up, namespace: talos-automation}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: cluster-up}
+subjects:
+  - {kind: ServiceAccount, name: cluster-up, namespace: talos-automation}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cluster-up-lab-test
+  namespace: talos-automation
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      serviceAccountName: cluster-up
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: cluster-up
+          image: ellinj/talos-automation:dev
+          command: ["cluster-up.sh"]
+          env:
+            - {name: CLUSTER_NAME, value: lab-test}
+            - {name: CP_IP, value: 192.168.10.57}
+            - {name: WORKER_IPS, value: ""}
+            - {name: HOME, value: /work}
+          envFrom:
+            - secretRef: {name: proxmox-token}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+      volumes:
+        - {name: work, emptyDir: {}}
