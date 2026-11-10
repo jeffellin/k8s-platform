@@ -125,7 +125,10 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
 4. **Override:** `kubectl annotate taloscluster <name> platform.ellin.net/allow-delete=keep-vms` lets the object be deleted **without** destroying the VMs
    (for example to hand the VMs to something else). The VMs and Secrets stay behind; you own them.
 
-**First use of the Git-driven delete:** teardown and the Flux prune of a *Flux-managed* XR have not been exercised end to end yet (the F3 tests used hand-applied XRs). Do the first one on a throwaway cluster and note the result here.
+**Verified on `myapp` (2026-11-09):** teardown, then removal from Git, then Flux's prune of the XR worked with no issues: the XR, its Jobs and its Secrets are gone, the VMs are
+gone from Proxmox, and `talos-clusters` stayed Ready (the delete protection let the prune through because the XR was `TornDown`). Not yet verified: putting the
+`teardown` annotation in the XR file in Git instead of using `kubectl annotate`, the `allow-delete: keep-vms` override, and recreating a cluster by removing the teardown
+annotation. Still manual afterwards: the allocation doc rows and stale Route53 records.
 
 ## 4. Onboard an existing cluster (SOPS path)
 
