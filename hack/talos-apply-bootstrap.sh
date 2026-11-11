@@ -59,10 +59,18 @@ else
 fi
 
 echo "waiting for cluster health..."
-# Check only the control plane here, by name. Without --control-plane-nodes talosctl health uses discovery, which keeps a removed worker
-# as a member for a while and then waits on it. Workers are NOT listed either: this step runs before a new worker has been configured
-# (it is still in maintenance mode), and each worker is waited for afterwards (talos-apply-worker.sh: node registered and Ready).
+# Name the nodes explicitly instead of using discovery (discovery keeps a removed worker as a member for a while, and health then waits
+# on it). Health also fails on any Kubernetes node it was not told about, so list the workers that are already CONFIGURED: those that
+# answer an authenticated Talos call. A new worker (still in maintenance mode, configured after this step; its API refuses our client
+# cert) is left out, and so is a removed one (it is no longer in WORKER_IPS). Each worker is waited for afterwards.
 HC=(--control-plane-nodes "$IP")
+configured=()
+IFS=, read -ra _wl <<<"${WORKER_IPS:-}"
+for w in "${_wl[@]}"; do
+  [[ -n "$w" ]] || continue
+  if timeout 20 talosctl --talosconfig "$DIR/talosconfig" -e "$IP" -n "$w" version >/dev/null 2>&1; then configured+=("$w"); else echo "health: skipping worker $w (not configured yet)"; fi
+done
+(( ${#configured[@]} )) && HC+=(--worker-nodes "$(IFS=,; echo "${configured[*]}")")
 "${TC[@]}" health "${HC[@]}" --wait-timeout 10m
 
 "${TC[@]}" kubeconfig "$DIR/kubeconfig" --force
