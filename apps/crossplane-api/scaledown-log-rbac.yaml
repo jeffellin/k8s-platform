@@ -1,0 +1,17 @@
+# Lets the scale-down Job (ServiceAccount cluster-up) save its log to ConfigMap scaledown-<cluster>-last in this namespace.
+# The Job and its Object disappear when the scale-down is done, so the ConfigMap is the record of the last run.
+# (cluster-up itself is still applied by hand, see F11; this Role only adds ConfigMaps.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: scaledown-log, namespace: talos-automation}
+rules:
+- apiGroups: [""]
+  resources: [configmaps]
+  verbs: [get, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: scaledown-log, namespace: talos-automation}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: scaledown-log}
+subjects:
+- {kind: ServiceAccount, name: cluster-up, namespace: talos-automation}
