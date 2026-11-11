@@ -59,10 +59,10 @@ else
 fi
 
 echo "waiting for cluster health..."
-# Name the nodes explicitly (WORKER_IPS, comma separated, optional). Without them talosctl health uses discovery, which keeps a removed
-# worker as a member for a while and then waits on it until the timeout.
+# Check only the control plane here, by name. Without --control-plane-nodes talosctl health uses discovery, which keeps a removed worker
+# as a member for a while and then waits on it. Workers are NOT listed either: this step runs before a new worker has been configured
+# (it is still in maintenance mode), and each worker is waited for afterwards (talos-apply-worker.sh: node registered and Ready).
 HC=(--control-plane-nodes "$IP")
-[[ -n "${WORKER_IPS:-}" ]] && HC+=(--worker-nodes "$WORKER_IPS")
 "${TC[@]}" health "${HC[@]}" --wait-timeout 10m
 
 "${TC[@]}" kubeconfig "$DIR/kubeconfig" --force
