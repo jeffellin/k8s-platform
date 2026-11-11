@@ -4,7 +4,7 @@
 # and the VLAN 10 allocation rows. Review the diff, then commit + PR; merging is the "one commit".
 #
 #   hack/new-talos-cluster.sh <name> [--workers N] [--cp-ip IP] [--worker-ips IP,IP] [--lb-range A-B]
-#                             [--hello-host HOST] [--alloc-doc PATH] [--write-alloc] [--dry-run]
+#                             [--hello-host HOST] [--node NODE] [--storage ID] [--alloc-doc PATH] [--write-alloc] [--dry-run]
 #   hack/new-talos-cluster.sh --remove <name>     # after teardown + delete (docs/crossplane-cluster-lifecycle.md 8.1)
 #
 # IPs/ranges are auto-picked as the lowest free ones, judged from the allocation doc (default
@@ -21,6 +21,8 @@ ap.add_argument("name", nargs="?")
 ap.add_argument("--remove", metavar="NAME")
 ap.add_argument("--workers", type=int, default=0)
 ap.add_argument("--cp-ip"); ap.add_argument("--worker-ips"); ap.add_argument("--lb-range"); ap.add_argument("--hello-host")
+ap.add_argument("--node", help="Proxmox node for the VMs (must be in the EnvironmentConfig; default: its defaultNode)")
+ap.add_argument("--storage", help="Proxmox storage ID for the VM disks (default: the node's storage in the EnvironmentConfig)")
 ap.add_argument("--alloc-doc"); ap.add_argument("--write-alloc", action="store_true"); ap.add_argument("--dry-run", action="store_true")
 a = ap.parse_args(sys.argv[2:])
 
@@ -65,6 +67,15 @@ cfg = yaml.safe_load(CLUSTERS.read_text())
 if n in cfg["clusters"]: die(f"{n} already in clusters.yaml")
 if (XRDIR / f"{n}.yaml").exists(): die(f"{XRDIR.relative_to(root)}/{n}.yaml already exists")
 if a.workers < 0: die("--workers must be >= 0")
+if a.storage and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", a.storage): die("--storage must be a Proxmox storage ID (letters, digits, . _ -)")
+if a.node:
+    envf = root / "apps" / "crossplane-environment" / "environmentconfig.yaml"
+    try:
+        nodes = yaml.safe_load(envf.read_text())["data"]["proxmox"]["nodes"]
+    except Exception as e:
+        die(f"cannot read nodes from {envf.relative_to(root)}: {e}")
+    if a.node not in nodes: die(f"node {a.node!r} is not in {envf.relative_to(root)} (known: {', '.join(sorted(nodes))}); add it there first")
+    if not (nodes[a.node] or {}).get("templates"): die(f"node {a.node!r} has no templates in {envf.relative_to(root)}")
 
 # collect used addresses
 used = set(); ranges = []
@@ -133,7 +144,7 @@ apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
 metadata: {{name: {n}, namespace: default}}
 spec:
-  network:
+""" + (f"  node: {a.node}\n" if a.node else "") + (f"  storage: {a.storage}\n" if a.storage else "") + f"""  network:
     controlPlaneIP: {cp}
 """ + (f"    workerIPs: [{', '.join(map(str, wips))}]\n" if wips else "") + f"  workers: {{count: {a.workers}}}\n"
 
@@ -158,8 +169,8 @@ entry = f"""
         options:
           hello_host: {host}
 """
-rows = [f"| {cp} | {vmid(cp)} | {n}-cp-1 | pve | PENDING | Not Terraform: Crossplane `TalosCluster` {n} control plane |"]
-rows += [f"| {w} | {vmid(w)} | {n}-w-{i+1} | pve | PENDING | Not Terraform: Crossplane `TalosCluster` {n} worker |" for i, w in enumerate(wips)]
+rows = [f"| {cp} | {vmid(cp)} | {n}-cp-1 | {a.node or "pve"} | PENDING | Not Terraform: Crossplane `TalosCluster` {n} control plane |"]
+rows += [f"| {w} | {vmid(w)} | {n}-w-{i+1} | {a.node or "pve"} | PENDING | Not Terraform: Crossplane `TalosCluster` {n} worker |" for i, w in enumerate(wips)]
 lbrow = f"| {lb[0]} – {lb[1]} | {n} | PENDING | Crossplane-built cluster |"
 
 print(f"cluster {n}: CP {cp} (VM {vmid(cp)}), workers {[str(w) for w in wips]}, MetalLB {lb[0]}-{lb[1]}, host {host}")
