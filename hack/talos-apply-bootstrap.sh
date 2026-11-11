@@ -59,7 +59,11 @@ else
 fi
 
 echo "waiting for cluster health..."
-"${TC[@]}" health --wait-timeout 10m
+# Name the nodes explicitly (WORKER_IPS, comma separated, optional). Without them talosctl health uses discovery, which keeps a removed
+# worker as a member for a while and then waits on it until the timeout.
+HC=(--control-plane-nodes "$IP")
+[[ -n "${WORKER_IPS:-}" ]] && HC+=(--worker-nodes "$WORKER_IPS")
+"${TC[@]}" health "${HC[@]}" --wait-timeout 10m
 
 "${TC[@]}" kubeconfig "$DIR/kubeconfig" --force
 chmod 600 "$DIR/kubeconfig"
