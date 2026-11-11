@@ -3,8 +3,8 @@
 # the token is referenced by Secret name; the Secret is created out of band (not in Git).
 #
 # Templates: a full clone to another node needs shared storage, and local-lvm is not shared, so each node
-# that hosts Talos VMs needs its own template. Only `pve` has one today (VM 9100, installs Talos v1.14.5).
-# Add pve2/pve3 entries when templates are built there (hack/build-talos-template.sh).
+# that hosts Talos VMs needs its own template. `pve` has VM 9100 (Talos v1.14.5). `pve2` uses 9102, a full clone of 9100 on shared storage, so it can be cloned to pve2;
+# a node whose template is not owned by `pve` needs TEMPLATE_NODE support (backlog F19). Add pve3 when a template exists (hack/build-talos-template.sh).
 apiVersion: apiextensions.crossplane.io/v1beta1
 kind: EnvironmentConfig
 metadata: {name: homelab}
@@ -20,6 +20,11 @@ data:
         bridge: vmbr1
         templates:
           v1.14.5: 9100
+      pve2:
+        storage: local-lvm       # ASSUMED: confirm pve2 has this storage ID
+        bridge: vmbr1            # ASSUMED: confirm pve2's VLAN 10 bridge
+        templates:
+          v1.14.5: 9102          # ASSUMED ID: full clone of 9100 on shared storage (owned by node pve; TEMPLATE_NODE defaults to pve)
   network:
     prefix: 22                   # VLAN 10 = 192.168.8.0/22 (native on vmbr1, no VLAN tag)
     gateway: 192.168.10.1
