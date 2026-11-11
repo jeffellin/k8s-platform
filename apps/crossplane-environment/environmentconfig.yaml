@@ -21,10 +21,11 @@ data:
         templates:
           v1.14.5: 9100
       pve2:
-        storage: local-lvm       # ASSUMED: confirm pve2 has this storage ID
-        bridge: vmbr1            # ASSUMED: confirm pve2's VLAN 10 bridge
+        storage: truenas-fast-storage   # must be shared: Proxmox rejects a cross-node clone (template is owned by pve) onto local-lvm
+        cloudInitStorage: local-lvm     # cloud-init drive stays local: Proxmox cannot write the ISO to the truenasplugin iSCSI LUN at start
+        bridge: vmbr1                   # verified: vmbr1 on pve2 has the VLAN 10 uplink (nic0.10)
         templates:
-          v1.14.5: 9102          # ASSUMED ID: full clone of 9100 on shared storage (owned by node pve; TEMPLATE_NODE defaults to pve)
+          v1.14.5: 9102          # full clone of 9100 on shared storage (owned by node pve; TEMPLATE_NODE defaults to pve)
   network:
     prefix: 22                   # VLAN 10 = 192.168.8.0/22 (native on vmbr1, no VLAN tag)
     gateway: 192.168.10.1

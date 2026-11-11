@@ -5,7 +5,9 @@
 #   hack/clone-talos-vm.sh --name lab-manager --ip 192.168.10.56 [--dry-run]
 #
 # VM ID defaults from the IP using the VLAN 10 rule (192.168.10.56 -> 10056).
-# Re-running when the VM ID already exists is a no-op.
+# Re-running when the VM ID already exists is a no-op, except that a stopped VM is started (a failed start must not look like success).
+# CI_STORAGE (optional): put the cloud-init drive on this storage instead of the clone's STORAGE. Needed when STORAGE is a
+# network/plugin storage (e.g. truenasplugin iSCSI), where Proxmox cannot write the cloud-init ISO at start (taint error).
 set -euo pipefail
 
 PVE_ENDPOINT="${PVE_ENDPOINT:-https://192.168.1.52:8006/api2/json}"
@@ -25,6 +27,7 @@ CORES="${CORES:-4}"
 MEMORY_MIB="${MEMORY_MIB:-8192}"
 DATA_GIB="${DATA_GIB:-50}"                 # scsi1, used by UserVolumeConfig
 TAGS="${TAGS:-talos}"
+CI_STORAGE="${CI_STORAGE:-}"
 
 NAME="" IP="" VMID="" DRY=0
 while [[ $# -gt 0 ]]; do
@@ -82,8 +85,16 @@ echo "      ${CORES} cores, ${MEMORY_MIB} MiB, data disk ${DATA_GIB} GiB on ${ST
 [[ $DRY == 1 ]] && { echo "dry-run: no changes made"; exit 0; }
 
 # Idempotency: does the VM ID exist anywhere in the cluster?
-if api GET "/cluster/resources?type=vm" | jq -e --argjson id "$VMID" '.data[] | select(.vmid == $id)' >/dev/null; then
-  echo "VM ${VMID} exists, skipping"
+existing="$(api GET "/cluster/resources?type=vm" | jq -c --argjson id "$VMID" '[.data[] | select(.vmid == $id)][0] // empty')"
+if [[ -n "$existing" ]]; then
+  vm_node="$(jq -r .node <<<"$existing")"; vm_status="$(jq -r .status <<<"$existing")"
+  if [[ "$vm_status" == "stopped" ]]; then
+    echo "VM ${VMID} exists on ${vm_node} but is stopped, starting..."
+    call POST "/nodes/${vm_node}/qemu/${VMID}/status/start" "$vm_node"
+    echo "done: VM ${VMID} started."
+  else
+    echo "VM ${VMID} exists (${vm_status}), skipping"
+  fi
   exit 0
 fi
 
@@ -103,6 +114,15 @@ call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/config" "$TARGET_NODE" \
   --data-urlencode "memory=${MEMORY_MIB}" \
   --data-urlencode "tags=${TAGS};${NAME}" \
   --data-urlencode "scsi1=${STORAGE}:${DATA_GIB},discard=on,ssd=1"
+
+if [[ -n "$CI_STORAGE" ]]; then
+  ci="$(api GET "/nodes/${TARGET_NODE}/qemu/${VMID}/config" | jq -r '.data.ide2 // empty')"
+  if [[ "$ci" == *cloudinit* && "$ci" != "${CI_STORAGE}:"* ]]; then
+    echo "moving cloud-init drive to ${CI_STORAGE} (was ${ci%%,*})..."
+    call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/config" "$TARGET_NODE" --data-urlencode "delete=ide2"
+    call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/config" "$TARGET_NODE" --data-urlencode "ide2=${CI_STORAGE}:cloudinit"
+  fi
+fi
 
 echo "starting..."
 call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/status/start" "$TARGET_NODE"

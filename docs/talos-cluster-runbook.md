@@ -64,7 +64,7 @@ image `ellinj/talos-automation:dev`; `VLAN10-IP-ALLOCATION.md` in `~/homelab/ter
    kubectl get talosclusters -w                       # PHASE column
    kubectl get taloscluster <name> -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}'
    kubectl -n talos-automation get jobs | grep <name>
-   kubectl -n talos-automation logs -f job/talos-<name>-r2      # also clone-<name>-cp-1, verify-..., platform-...
+   kubectl -n talos-automation logs -f job/talos-<name>-r3      # also clone-<name>-cp-1-r3, verify-..., platform-...
    ```
 6. **Use it.**
    ```bash
@@ -100,6 +100,8 @@ What you can change today, and how:
 - **Changing CPU, memory or disk** of an existing node: clone Jobs skip VMs that exist, so nothing changes. Rebuild the cluster instead.
 - **Talos / Kubernetes upgrades** by editing `talosVersion` / `kubernetesVersion`: no upgrade logic yet (backlog F2); templates exist only for `v1.14.5`.
 - **Choosing the datastore per cluster**: set `spec.storage` on the XR to a Proxmox storage ID (for example your TrueNAS NFS storage). It applies to both the system and data disks and defaults to the node's `storage` in the EnvironmentConfig. The storage must already exist on the target node; set it before the first apply, because existing VMs are not moved. **The Proxmox API token also needs rights on the new storage**, or the clone Job fails with `Permission check failed (/storage/<id>, Datastore.AllocateSpace)`. On the `pve` host: `pveum acl modify /storage/<id> --users talos-provisioner@pve --roles TalosProvisioner` and the same with `--tokens 'talos-provisioner@pve!bootstrapper'` (with privilege separation on, a token's rights are the intersection of the user's and the token's ACLs, so **grant the same role to both** `--users talos-provisioner@pve` and `--tokens 'talos-provisioner@pve!bootstrapper'`, as the existing `/storage/local-lvm` entries do). If the clone Job already hit its backoff limit, delete it (`kubectl -n talos-automation delete job clone-<cluster>-<node>`) and the composition recreates it. Avoid network storage for control planes you intend to keep (etcd fsync latency).
+- **Cloning across nodes needs shared target storage.** Templates live on one node (`pve`). A VM on another node (`--node pve2`) can only be cloned onto a **shared** storage (Proxmox error `can't clone to non-shared storage`), so set that node's `storage` to a shared one. If that storage is a network/plugin storage, set the node's `cloudInitStorage` (for example `local-lvm`) so the cloud-init drive stays local: starting a VM whose cloud-init ISO is on the `truenasplugin` iSCSI LUN fails with `Insecure dependency in exec while running with -T switch`.
+- **Script changes need the image rebuilt and pushed** (`ellinj/talos-automation:dev`); the Jobs use `imagePullPolicy: Always`, so the next Job picks it up. Build commands are in the PR that added this.
 - **Moving a cluster to another Proxmox node**, or building on `pve2`/`pve3`: only `pve` has a template.
 
 ## 3. Delete a cluster
@@ -111,7 +113,7 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
    ```bash
    kubectl -n default annotate taloscluster <name> platform.ellin.net/teardown=true
    kubectl get taloscluster <name> -w                    # wait for PHASE=TornDown (about a minute)
-   kubectl -n talos-automation logs job/teardown-<name>-r2
+   kubectl -n talos-automation logs job/teardown-<name>-r3
    ```
    The Job stops and purges only VMs named `<name>-(cp|w)-N` that carry the tags `talos` and their own name (workers first, then the control plane), then deletes
    `<name>-talos-secrets`, `-talosconfig`, `-kubeconfig`, `-age-key`. It refuses to touch `lab-manager`. It cannot be undone; the cluster's data is gone.
@@ -177,9 +179,9 @@ The cluster does not have to exist for steps 1-5; the keys do not depend on it.
 
 | Symptom | Look at | Likely cause / fix |
 |---|---|---|
-| Stuck in `VMsCreating` | `kubectl -n talos-automation logs job/clone-<name>-cp-1` | Proxmox API/token error, template missing, VM ID already in use by something else. |
-| Stuck in `TalosApplying` | `logs job/talos-<name>-r2` | Node not reachable on 50000/6443 from the manager, wrong IPs, slow install (up to 15 min wait). Safe to wait; Job retries twice. |
-| `PlatformApplying` for a long time | `logs job/platform-<name>-r2` | `clusters/<name>/` not on `main` (the Job says so and fails), GitHub download 504s (retried), a cluster app not Ready (the Job prints the count). On the cluster: `kubectl -n flux-system get kustomization,helmrelease -A`. |
+| Stuck in `VMsCreating` | `kubectl -n talos-automation logs job/clone-<name>-cp-1-r3` | Proxmox API/token error, template missing, VM ID already in use by something else. |
+| Stuck in `TalosApplying` | `logs job/talos-<name>-r3` | Node not reachable on 50000/6443 from the manager, wrong IPs, slow install (up to 15 min wait). Safe to wait; Job retries twice. |
+| `PlatformApplying` for a long time | `logs job/platform-<name>-r3` | `clusters/<name>/` not on `main` (the Job says so and fails), GitHub download 504s (retried), a cluster app not Ready (the Job prints the count). On the cluster: `kubectl -n flux-system get kustomization,helmrelease -A`. |
 | XR `Synced=False` | `kubectl describe taloscluster <name>` | Composition render error or an Object stuck: `kubectl get objects.kubernetes.m.crossplane.io -A`. An Object stuck deleting after a Job-spec change: clear its finalizer, delete the old Job. |
 | `crossplane-api` Kustomization not Ready | `kubectl -n flux-system get kustomization crossplane-api` | Flux variable substitution chokes on `${...}` in new manifests (the `destroy-cluster` ConfigMap carries `kustomize.toolkit.fluxcd.io/substitute: disabled` for this reason); or `suspend: true` left on after hand testing. |
 | `new-sops-cluster.sh` fails with `KeyError` | The cluster is not in `clusters.yaml` yet (step 1 of section 4); it is also not the script for Crossplane-built clusters (`new-talos-cluster.sh`). |
