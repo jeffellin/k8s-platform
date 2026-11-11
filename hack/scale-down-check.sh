@@ -12,7 +12,7 @@
 # Exit: 0 safe or warnings only, 2 bad input, 3 data at risk (the Job would refuse unless the XR has platform.ellin.net/allow-data-loss: "true").
 set -euo pipefail
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
 NAME="" COUNT="" EDIT=0 KC="" MGR=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
