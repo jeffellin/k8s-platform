@@ -5,12 +5,14 @@
 #
 #   hack/scale-down-check.sh <cluster> <new-worker-count> [--edit] [--kubeconfig FILE] [--manager-kubeconfig PATH]
 #
+# Which cluster it looks at: --kubeconfig FILE if given, else the $KUBECONFIG you already have set (point it at the cluster's own
+# kubeconfig), else it fetches the cluster's kubeconfig from the manager with hack/get-kubeconfig.sh (needs manager access).
 # Removes workers <cluster>-w-<N> with N > new-count (highest first). Changes nothing in the cluster. With --edit it also rewrites
 # workerIPs and workers.count in apps/talos-clusters/<cluster>.yaml (only when the verdict is not DATA AT RISK; review the diff, then PR).
 # Exit: 0 safe or warnings only, 2 bad input, 3 data at risk (the Job would refuse unless the XR has platform.ellin.net/allow-data-loss: "true").
 set -euo pipefail
 
-usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
 NAME="" COUNT="" EDIT=0 KC="" MGR=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -30,11 +32,14 @@ done
 for t in kubectl jq; do command -v "$t" >/dev/null || { echo "missing tool: $t" >&2; exit 1; }; done
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-if [[ -z "$KC" ]]; then
-  KC="$(mktemp)"; trap 'rm -f "$KC"' EXIT
+if [[ -n "$KC" ]]; then src="--kubeconfig $KC"
+elif [[ -n "${KUBECONFIG:-}" ]]; then KC="$KUBECONFIG"; src="\$KUBECONFIG ($KC)"
+else
+  KC="$(mktemp)"; trap 'rm -f "$KC"' EXIT; src="fetched from the manager"
   "$HERE/get-kubeconfig.sh" "$NAME" -o "$KC" ${MGR:+--manager-kubeconfig "$MGR"} >/dev/null
 fi
 export KUBECONFIG="$KC"
+echo "using the kubeconfig from ${src}"
 k() { kubectl --request-timeout=30s "$@"; }
 
 # Workers present in the cluster, with their IPs.
@@ -42,7 +47,7 @@ mapfile -t have < <(k get nodes -o json | jq -r --arg c "$NAME" '.items[] | .met
   | select($n | test("^" + $c + "-w-[0-9]+$")) | [($n | capture("-w-(?<i>[0-9]+)$").i | tonumber), $n,
     (.status.addresses[] | select(.type=="InternalIP").address), ([.status.conditions[] | select(.type=="Ready").status][0])] | @tsv' | sort -n)
 current=${#have[@]}
-[[ "$current" -gt 0 ]] || { echo "no workers named ${NAME}-w-N found in the cluster" >&2; exit 2; }
+[[ "$current" -gt 0 ]] || { echo "no workers named ${NAME}-w-N in the cluster this kubeconfig points at (${src}). Is it the right cluster? \$KUBECONFIG may be the manager's; use --kubeconfig FILE or unset it to fetch ${NAME}'s." >&2; exit 2; }
 if [[ "$COUNT" -ge "$current" ]]; then echo "${NAME} has $current worker(s); ${COUNT} is not a scale-down. Nothing to check."; exit 0; fi
 
 remove=(); for row in "${have[@]}"; do idx="${row%%$'\t'*}"; [[ "$idx" -gt "$COUNT" ]] && remove+=("$row"); done
