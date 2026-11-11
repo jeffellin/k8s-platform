@@ -126,7 +126,7 @@ spec:
           {{- $extra := 0 -}}
           {{- range $key, $_ := ($.observed.resources | default dict) -}}
           {{- if regexMatch (printf "^vm-%s-w-[0-9]+-%s$" $name $rev) $key -}}
-          {{- if gt (int (regexReplaceAll (printf "^vm-%s-w-([0-9]+)-%s$" $name $rev) $key "${1}" | atoi)) $want }}{{ $extra = add $extra 1 }}{{ end -}}
+          {{- if gt (int ($key | trimPrefix (printf "vm-%s-w-" $name) | trimSuffix (printf "-%s" $rev) | atoi)) $want }}{{ $extra = add $extra 1 }}{{ end -}}
           {{- end -}}
           {{- end -}}
           {{- $sobs := (index ($.observed.resources | default dict) (printf "scaledown-%s-%s" $name $rev)) | default dict -}}
