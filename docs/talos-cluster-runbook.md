@@ -51,6 +51,7 @@ image `ellinj/talos-automation:dev`; `VLAN10-IP-ALLOCATION.md` in `~/homelab/ter
    ```
    It auto-picks the lowest free control plane IP, worker IPs and a 10-address MetalLB block (judged from the allocation doc's **table rows**, the DHCP range,
    `clusters.yaml` and existing XRs) and prints the allocation rows. Overrides: `--cp-ip`, `--worker-ips a,b`, `--lb-range A-B`, `--hello-host`, `--alloc-doc PATH`.
+   Placement: `--node pve2` puts the VMs on another Proxmox node (it must exist in the EnvironmentConfig with a template, or the script stops), and `--storage <id>` picks the Proxmox storage for the VM disks; both are written into the XR `spec` and omitted when not given (defaults come from the EnvironmentConfig). A new storage also needs the Proxmox token ACL (see "Choosing the datastore per cluster").
    Rules it enforces: IPs outside the DHCP range `192.168.8.16-192.168.10.50`; VM ID = last two octets (`192.168.10.59` -> `10059`); not `lab-manager`/`talos-test`.
 2. **Write it.** Run again without `--dry-run`; add `--write-alloc` to insert the PENDING rows into the allocation doc (otherwise copy the printed rows by hand).
    It writes the XR, the `clusters.yaml` entry, `clusters/<name>/`, and updates `apps/talos-clusters/kustomization.yaml`.
