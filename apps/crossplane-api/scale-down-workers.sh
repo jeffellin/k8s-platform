@@ -8,8 +8,8 @@
 # Env: CLUSTER, KEEP (workers to keep, >= 1), PVE_ENDPOINT PVE_TOKEN_ID PVE_TOKEN_SECRET [PVE_INSECURE=1],
 #      ALLOW_DATA_LOSS=1 (go ahead despite local volumes pinned to the node or pods without a controller),
 #      DRAIN_TIMEOUT (default 10m), DRY_RUN=1 (print the mutating steps, change nothing),
-#      KUBECONFIG (default /kube/kubeconfig), TALOSCONFIG (default /talos/talosconfig).
-# Exit codes: 0 done, 2 bad input, 3 refused (data at risk), 4 drain blocked.
+#      CP_IP (control plane IP for talosctl; default: read from the control-plane node), KUBECONFIG (default /kube/kubeconfig), TALOSCONFIG (default /talos/talosconfig).
+# Exit codes: 0 done, 2 bad input, 3 refused (data at risk), 4 drain blocked, 5 reset failed on a node that still answers.
 set -euo pipefail
 
 : "${CLUSTER:?}" "${KEEP:?}" "${PVE_ENDPOINT:?}" "${PVE_TOKEN_ID:?}" "${PVE_TOKEN_SECRET:?}"
@@ -70,8 +70,18 @@ for i in "${todo[@]}"; do
     # 3. leave the cluster cleanly, then remove the Node object.
     ip="$(kubectl get node "$node" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
     echo "resetting ${node} (${ip})"
-    run talosctl --talosconfig "$TALOSCONFIG" -n "$ip" reset --graceful=true --reboot=false --wait=true --timeout=5m \
-      || echo "warning: talosctl reset failed (node unreachable?); continuing, the VM is destroyed next"
+    # The talosconfig has no endpoints, so name the control plane (any node is reached through it).
+    cp_ip="${CP_IP:-$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')}"
+    [[ -n "$cp_ip" ]] || { echo "cannot find the control-plane IP for talosctl (set CP_IP)" >&2; exit 2; }
+    tc=(talosctl --talosconfig "$TALOSCONFIG" -e "$cp_ip" -n "$ip")
+    if ! run "${tc[@]}" reset --graceful=true --reboot=false --wait=true --timeout=5m; then
+      # A node that still answers must not be purged half-reset; one that does not answer is already gone, so go on.
+      if "${tc[@]}" version >/dev/null 2>&1; then
+        echo "talosctl reset FAILED but ${node} (${ip}) still answers: leaving the node and VM alone (fix it and delete this Job to retry)" >&2
+        exit 5
+      fi
+      echo "warning: talosctl reset failed and ${node} (${ip}) is unreachable; continuing, the VM is destroyed next"
+    fi
     run kubectl delete node "$node" --ignore-not-found
   else
     echo "node ${node} already gone from Kubernetes"
