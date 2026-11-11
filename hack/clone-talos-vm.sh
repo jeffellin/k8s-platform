@@ -84,12 +84,30 @@ echo "plan: clone ${TEMPLATE_ID} -> VM ${VMID} '${NAME}' on ${TARGET_NODE}; net0
 echo "      ${CORES} cores, ${MEMORY_MIB} MiB, data disk ${DATA_GIB} GiB on ${STORAGE}, tags '${TAGS};${NAME}'"
 [[ $DRY == 1 ]] && { echo "dry-run: no changes made"; exit 0; }
 
+# Keep the cloud-init drive (ide2) on CI_STORAGE. Idempotent and safe to repeat after a partial failure (drive deleted but not
+# re-added). Only call it while the VM is stopped.
+ensure_cloudinit_storage() {  # ensure_cloudinit_storage NODE
+  [[ -n "$CI_STORAGE" ]] || return 0
+  local node="$1" ci
+  ci="$(api GET "/nodes/${node}/qemu/${VMID}/config" | jq -r '.data.ide2 // empty')"
+  [[ "$ci" == "${CI_STORAGE}:"* ]] && return 0
+  if [[ -n "$ci" ]]; then
+    echo "moving cloud-init drive to ${CI_STORAGE} (was ${ci%%,*})..."
+    call POST "/nodes/${node}/qemu/${VMID}/config" "$node" --data-urlencode "delete=ide2"
+  else
+    echo "adding cloud-init drive on ${CI_STORAGE}..."
+  fi
+  call POST "/nodes/${node}/qemu/${VMID}/config" "$node" --data-urlencode "ide2=${CI_STORAGE}:cloudinit"
+}
+
 # Idempotency: does the VM ID exist anywhere in the cluster?
 existing="$(api GET "/cluster/resources?type=vm" | jq -c --argjson id "$VMID" '[.data[] | select(.vmid == $id)][0] // empty')"
 if [[ -n "$existing" ]]; then
   vm_node="$(jq -r .node <<<"$existing")"; vm_status="$(jq -r .status <<<"$existing")"
   if [[ "$vm_status" == "stopped" ]]; then
-    echo "VM ${VMID} exists on ${vm_node} but is stopped, starting..."
+    echo "VM ${VMID} exists on ${vm_node} but is stopped"
+    ensure_cloudinit_storage "$vm_node"
+    echo "starting..."
     call POST "/nodes/${vm_node}/qemu/${VMID}/status/start" "$vm_node"
     echo "done: VM ${VMID} started."
   else
@@ -115,14 +133,7 @@ call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/config" "$TARGET_NODE" \
   --data-urlencode "tags=${TAGS};${NAME}" \
   --data-urlencode "scsi1=${STORAGE}:${DATA_GIB},discard=on,ssd=1"
 
-if [[ -n "$CI_STORAGE" ]]; then
-  ci="$(api GET "/nodes/${TARGET_NODE}/qemu/${VMID}/config" | jq -r '.data.ide2 // empty')"
-  if [[ "$ci" == *cloudinit* && "$ci" != "${CI_STORAGE}:"* ]]; then
-    echo "moving cloud-init drive to ${CI_STORAGE} (was ${ci%%,*})..."
-    call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/config" "$TARGET_NODE" --data-urlencode "delete=ide2"
-    call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/config" "$TARGET_NODE" --data-urlencode "ide2=${CI_STORAGE}:cloudinit"
-  fi
-fi
+ensure_cloudinit_storage "$TARGET_NODE"
 
 echo "starting..."
 call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/status/start" "$TARGET_NODE"
