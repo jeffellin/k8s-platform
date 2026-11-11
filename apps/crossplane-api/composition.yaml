@@ -119,6 +119,22 @@ spec:
             phase: {{ if $tdone }}TornDown{{ else }}TearingDown{{ end }}
           {{- else }}
           {{- $ready := 0 -}}
+          {{- /* F1 scale-down. A worker the XR no longer lists is still present in the OBSERVED resources (its vm-<name>-w-N Object), which is
+                 how we know it was removed: workers above the desired count are counted here, then not rendered again (they are handed to the
+                 scaledown Job below). The scaledown Object itself is the marker that keeps the layer alive until its Job succeeds. */ -}}
+          {{- $want := len ($xr.spec.network.workerIPs | default list) -}}
+          {{- $extra := 0 -}}
+          {{- range $key, $_ := ($.observed.resources | default dict) -}}
+          {{- if regexMatch (printf "^vm-%s-w-[0-9]+-%s$" $name $rev) $key -}}
+          {{- if gt (int (regexReplaceAll (printf "^vm-%s-w-([0-9]+)-%s$" $name $rev) $key "${1}" | atoi)) $want }}{{ $extra = add $extra 1 }}{{ end -}}
+          {{- end -}}
+          {{- end -}}
+          {{- $sobs := (index ($.observed.resources | default dict) (printf "scaledown-%s-%s" $name $rev)) | default dict -}}
+          {{- $sexists := gt (len $sobs) 0 -}}
+          {{- $sdone := gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $sobs)) 0 -}}
+          {{- $sfailed := gt (int (dig "resource" "status" "atProvider" "manifest" "status" "failed" 0 $sobs)) 0 -}}
+          {{- $scaling := or (gt (int $extra) 0) (and $sexists (not $sdone)) -}}
+          {{- $allowLoss := eq (dig "metadata" "annotations" "platform.ellin.net/allow-data-loss" "" $xr) "true" -}}
           {{- range $n := $nodes }}
           {{- $res := printf "vm-%s-%s" $n.name $rev }}
           {{- $obs := (index ($.observed.resources | default dict) $res) | default dict -}}
@@ -181,7 +197,66 @@ spec:
                           allowPrivilegeEscalation: false
                           capabilities: {drop: [ALL]}
           {{- end }}
-          {{- $vmsReady := eq (int $ready) (len $nodes) -}}
+          {{- if $scaling }}
+          ---
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: scaledown-{{ $name }}-{{ $rev }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: scaledown-{{ $name }}-{{ $rev }}
+              gotemplating.fn.crossplane.io/ready: {{ if $sdone }}"True"{{ else }}"False"{{ end }}
+          spec:
+            providerConfigRef: {kind: ClusterProviderConfig, name: default}
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: scaledown-{{ $name }}-{{ $rev }}
+                  namespace: talos-automation
+                  labels: {platform.ellin.net/cluster: {{ $name }}}
+                spec:
+                  backoffLimit: 0
+                  activeDeadlineSeconds: 3600
+                  template:
+                    spec:
+                      serviceAccountName: cluster-up
+                      restartPolicy: Never
+                      securityContext:
+                        runAsNonRoot: true
+                        runAsUser: 10001
+                        seccompProfile: {type: RuntimeDefault}
+                      containers:
+                      - name: scaledown
+                        image: {{ $env.talos.image }}
+                        imagePullPolicy: Always
+                        command: [bash, /scripts/scale-down-workers.sh]
+                        env:
+                        - {name: CLUSTER, value: {{ $name | quote }}}
+                        - {name: KEEP, value: {{ $want | quote }}}
+                        - {name: ALLOW_DATA_LOSS, value: {{ if $allowLoss }}"1"{{ else }}"0"{{ end }}}
+                        - {name: PVE_ENDPOINT, value: {{ $px.endpoint | quote }}}
+                        - {name: PVE_INSECURE, value: {{ if $px.insecureTLS }}"1"{{ else }}"0"{{ end }}}
+                        - {name: HOME, value: /tmp}
+                        envFrom:
+                        - secretRef: {name: {{ $px.tokenSecretRef.name }}}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                        volumeMounts:
+                        - {name: scripts, mountPath: /scripts}
+                        - {name: kube, mountPath: /kube, readOnly: true}
+                        - {name: talos, mountPath: /talos, readOnly: true}
+                      volumes:
+                      - name: scripts
+                        configMap: {name: scale-down-workers}
+                      - name: kube
+                        secret: {secretName: {{ $name }}-kubeconfig}
+                      - name: talos
+                        secret: {secretName: {{ $name }}-talosconfig}
+          {{- end }}
+          {{- $vmsReady := and (eq (int $ready) (len $nodes)) (not $scaling) -}}
           {{- $workerIPs := join "," ($xr.spec.network.workerIPs | default list) -}}
           {{- $talosDone := false -}}
           {{- $verifyDone := false -}}
@@ -419,7 +494,8 @@ spec:
           apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
           kind: ClaimConditions
           conditions:
-          - {type: VMsReady, status: {{ if $vmsReady }}"True"{{ else }}"False"{{ end }}, reason: {{ if $vmsReady }}AllVMsCloned{{ else }}VMsCreating{{ end }}, target: Composite}
+          - {type: VMsReady, status: {{ if $vmsReady }}"True"{{ else }}"False"{{ end }}, reason: {{ if $vmsReady }}AllVMsCloned{{ else if $scaling }}ScalingDown{{ else }}VMsCreating{{ end }}, target: Composite}
+          - {type: ScalingDown, status: {{ if $scaling }}"True"{{ else }}"False"{{ end }}, reason: {{ if $sfailed }}ScaleDownBlocked{{ else if $scaling }}InProgress{{ else }}NotScaling{{ end }}{{ if $sfailed }}, message: "Scale-down stopped (data at risk or a blocked drain): read kubectl -n talos-automation logs job/scaledown-{{ $name }}-{{ $rev }}; fix it, then delete that Job (not the Object) to retry. See the runbook, section Scale down."{{ end }}, target: Composite}
           - {type: TalosReady, status: {{ if $talosDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $talosDone }}ClusterBootstrapped{{ else }}Pending{{ end }}, target: Composite}
           - {type: KubernetesReady, status: {{ if $verifyDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $verifyDone }}AllNodesReady{{ else }}Pending{{ end }}, target: Composite}
           - {type: PlatformReady, status: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $platformDone }}FluxSynced{{ else }}Pending{{ end }}, target: Composite}
@@ -427,7 +503,7 @@ spec:
           apiVersion: platform.ellin.net/v1alpha1
           kind: TalosCluster
           status:
-            phase: {{ if $platformDone }}Ready{{ else if $verifyDone }}PlatformApplying{{ else if $talosDone }}KubernetesVerifying{{ else if $vmsReady }}TalosApplying{{ else }}VMsCreating{{ end }}
+            phase: {{ if $scaling }}ScalingDown{{ else if $platformDone }}Ready{{ else if $verifyDone }}PlatformApplying{{ else if $talosDone }}KubernetesVerifying{{ else if $vmsReady }}TalosApplying{{ else }}VMsCreating{{ end }}
             controlPlane:
               name: {{ $name }}-cp-1
               vmid: {{ $cpip := splitList "." $xr.spec.network.controlPlaneIP }}{{ printf "%d%03d" (index $cpip 2 | atoi) (index $cpip 3 | atoi) }}

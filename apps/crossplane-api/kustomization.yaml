@@ -9,3 +9,10 @@ configMapGenerator:
     disableNameSuffixHash: true
     annotations:
       kustomize.toolkit.fluxcd.io/substitute: disabled   # the script is full of ${VAR}: Flux envsubst must not touch it
+- name: scale-down-workers
+  namespace: talos-automation
+  files: [scale-down-workers.sh]
+  options:
+    disableNameSuffixHash: true
+    annotations:
+      kustomize.toolkit.fluxcd.io/substitute: disabled
