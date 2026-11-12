@@ -96,6 +96,18 @@ What you can change today, and how:
 | **Platform/composition behaviour for all clusters** | Edit `apps/crossplane-api/` (composition, XRD) or `apps/crossplane-environment/` via PR. | Job pod templates are immutable: **bump `$rev`** in `composition.yaml` whenever a talos/verify/platform Job spec changes, or existing clusters never pick it up. Hand-applying to the manager is reverted by Flux unless you suspend `crossplane-api` (and resume it afterwards). |
 | **Rotate AWS credentials** | Update Secret `aws-credentials` on the manager. | The platform Job copies it only when it runs: also update `aws-credentials` in the `cert-manager` and `external-dns` namespaces of each existing cluster by hand. |
 
+### Scaling down below a Longhorn volume's replica count
+
+Example: a volume has 2 replicas and you remove a worker so only 1 is left. Replicas of one volume cannot share a node, so the volume cannot stay healthy: the drain passes, the lost replica is not rebuilt, and the volume stays `degraded` (`ReplicaSchedulingFailure: precheck new replica failed: disks are unavailable`). The data survives on the remaining replica but has no redundancy. Seen on `demo2`. The scale-down Job does not handle this, so do it by hand, before you edit the XR (cluster's own kubeconfig, objects in `longhorn-system`):
+
+1. **Find the volumes that are affected:** `kubectl -n longhorn-system get volumes.longhorn.io -o custom-columns=NAME:.metadata.name,REPLICAS:.spec.numberOfReplicas,ROBUSTNESS:.status.robustness`. Any volume whose replicas exceed the workers you will keep is affected. All volumes should be `healthy` first.
+2. **Lower each affected volume's replica count** to the number of workers you will keep: `kubectl -n longhorn-system patch volumes.longhorn.io <volume> --type merge -p '{"spec":{"numberOfReplicas":1}}'`. This is a deliberate loss of redundancy. Changing the StorageClass only affects new volumes; change it too if new volumes should match. Wait until the volumes are `healthy`.
+3. **Evict the node you will remove,** so its replica is dropped cleanly rather than lost: `kubectl -n longhorn-system patch nodes.longhorn.io <worker> --type merge -p '{"spec":{"allowScheduling":false,"evictionRequested":true}}'`. Wait until `kubectl -n longhorn-system get replicas.longhorn.io -o wide` shows nothing on that node and every volume is `healthy`. A volume with its only replica on this node is moved to another worker first.
+4. **Scale down as usual** (`hack/scale-down-check.sh`, edit the XR, PR, merge). If the drain is blocked (exit 4), a volume still has its last healthy replica on the node: go back to step 3.
+5. **Delete the stale Longhorn node** once the Kubernetes Node is gone: `kubectl -n longhorn-system delete nodes.longhorn.io <worker>`. Otherwise it stays `Ready=False` and its disk counts as unavailable.
+
+The `demo2` test showed the failure above. The commands here come from the Longhorn docs and have not been run on a cluster yet. See `docs/longhorn.md`, "Drains and scale-down".
+
 **Not supported yet: do not try**
 - **Reducing to 0 workers** (N -> 0): not supported; the control plane would need its taint removed again. Remove workers down to 1, or rebuild.
 - **Removed worker still listed by `talosctl health`**: the scale-down resets the node through the control plane (`talosctl -e <controlPlaneIP> -n <worker> reset`) so it leaves Talos discovery. If the reset fails on a node that still answers, the Job exits 5 and leaves the node and VM alone (fix it, delete the Job to retry). The platform's Talos layer also names its nodes explicitly for `talosctl health` (`WORKER_IPS`), which needs the `ellinj/talos-automation:dev` image rebuilt; until then a stale member can hold the health check for up to its 10 minute timeout.
