@@ -159,7 +159,6 @@ entry = f"""
       - name: metallb-config
         options:
           metal_lb_address_pool: {lb[0]}-{lb[1]}
-      - name: local-path-provisioner
       - name: metrics-server
       - name: contour
       - name: cert-manager

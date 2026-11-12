@@ -1,6 +1,8 @@
 # Single source of truth: which apps run on which cluster, and their options.
 # Edit this, then run `hack/render.py` and commit the generated clusters/<name>/ files.
 # Each app's name matches a directory under apps/. Ordering comes from apps/<app>/meta.yaml.
+# local-path-provisioner is retired (2026-11-12, nothing used it; backlog F22). apps/local-path-provisioner stays: to use it again add
+# `- name: local-path-provisioner` to a cluster's apps. Clusters then have no StorageClass until one is added (Longhorn is planned).
 repo:
   url: https://github.com/jeffellin/k8s-platform.git
   branch: main
@@ -22,7 +24,6 @@ clusters:
       - name: metallb-config
         options:
           metal_lb_address_pool: 192.168.1.156-192.168.1.160
-      - name: local-path-provisioner
       - name: metrics-server
       - name: contour
       - name: cert-manager        # needs secrets/cert-manager/aws-credentials.sops.yaml
@@ -41,7 +42,6 @@ clusters:
       - name: metallb-config
         options:
           metal_lb_address_pool: 192.168.11.10-192.168.11.14
-      - name: local-path-provisioner
       - name: metrics-server
       - name: contour
       - name: cert-manager        # needs secrets/cert-manager/aws-credentials.sops.yaml
@@ -65,7 +65,6 @@ clusters:
       - name: metallb-config
         options:
           metal_lb_address_pool: 192.168.11.15-192.168.11.24
-      - name: local-path-provisioner
       - name: metrics-server
       - name: contour
       - name: cert-manager
@@ -86,7 +85,6 @@ clusters:
       - name: metallb-config
         options:
           metal_lb_address_pool: 192.168.11.25-192.168.11.34
-      - name: local-path-provisioner
       - name: metrics-server
       - name: contour
       - name: cert-manager
