@@ -6,7 +6,7 @@ metadata: {name: demo2, namespace: default}
 spec:
   network:
     controlPlaneIP: 192.168.10.58
-    workerIPs: [192.168.10.69, 192.168.10.70]
+    workerIPs: [192.168.10.69]
   storage: truenas-fast-storage
-  workers: {count: 2}
+  workers: {count: 1}
   node: pve2
