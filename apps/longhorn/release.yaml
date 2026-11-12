@@ -1,0 +1,55 @@
+# Longhorn replicated block storage (replaces local-path, backlog F22). See docs/longhorn.md for the Talos prerequisites and the options.
+# Per-cluster options (clusters.yaml, app `longhorn`, `options:`), all optional:
+#   longhorn_replicas    replicas per volume: 1 for a single-worker cluster, 2 for 2 workers, 3 for 3 or more   (default 2)
+#   longhorn_data_path   where the data disk is mounted on the node                                              (default /var/mnt/longhorn)
+# NOTE: `defaultSettings` are only read when Longhorn is first installed; later changes go through the Longhorn UI or the settings.longhorn.io objects.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata: {name: longhorn, namespace: longhorn-system}
+spec:
+  interval: 1h
+  url: https://charts.longhorn.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: {name: longhorn, namespace: longhorn-system}
+spec:
+  interval: 30m
+  # Many large images on a slow link (F20): give the install time and keep retrying instead of going Failed.
+  install:
+    timeout: 15m
+    crds: CreateReplace
+    remediation: {retries: -1}
+  upgrade:
+    timeout: 15m
+    crds: CreateReplace
+    remediation: {retries: 3}
+  chart:
+    spec:
+      chart: longhorn
+      version: 1.13.x          # one minor at a time when upgrading (Longhorn does not support skipping minors)
+      sourceRef: {kind: HelmRepository, name: longhorn}
+  values:
+    persistence:
+      defaultClass: true                              # the cluster's default StorageClass
+      defaultClassReplicaCount: ${longhorn_replicas:-2}
+      defaultDataLocality: best-effort                # keep one replica on the node that runs the pod (slow links to the storage backend)
+      reclaimPolicy: Delete                           # "Retain" keeps the volume after the PVC is deleted; Delete avoids orphans on throwaway clusters
+    defaultSettings:
+      defaultDataPath: ${longhorn_data_path:-/var/mnt/longhorn}   # Talos user volume `longhorn` is mounted at /var/mnt/longhorn
+      defaultReplicaCount: ${longhorn_replicas:-2}
+      # The data disk is dedicated (the OS is on its own disk), so the 30% / 25% defaults waste too much of a 50 GB disk.
+      storageReservedPercentageForDefaultDisk: 10
+      storageMinimalAvailablePercentage: 15
+      defaultDataLocality: best-effort
+      replicaAutoBalance: least-effort                # spread replicas onto a worker that was added later (scale-up)
+      concurrentReplicaRebuildPerNodeLimit: 2         # default 5; rebuilds over a slow iSCSI link starve the workloads
+      allowVolumeCreationWithDegradedAvailability: false   # docs recommend off outside testing: a volume is not created without its replicas
+      # nodeDrainPolicy stays block-if-contains-last-replica (the default): a drain, and so the F1 scale-down, is refused while the node holds the
+      # last healthy replica of a volume. With 2+ replicas on 2+ workers it passes. block-for-eviction-if-contains-last-replica would evacuate replicas
+      # automatically first; decide when F1 is taught about Longhorn (docs/longhorn.md).
+      nodeDrainPolicy: block-if-contains-last-replica
+    csi:
+      allowControllerSecretAccess: false              # we use no encrypted volumes or secret-backed parameters; drops cluster-wide read of Secrets
+    preUpgradeChecker:
+      jobEnabled: false                               # Helm pre-upgrade hook Job; recommended off when installed by a GitOps controller
