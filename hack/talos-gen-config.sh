@@ -43,7 +43,7 @@ else
   chmod 600 "$OUT/secrets.yaml"
 fi
 
-# Talos 1.14 multi-document patch: install image + data disk for local-path storage.
+# Talos 1.14 multi-document patch: install image + data disk (user volume `longhorn`, mounted at /var/mnt/longhorn, Longhorn's default data path).
 cat > "$OUT/patch.yaml" <<EOF
 apiVersion: v1alpha1
 kind: UnattendedInstallConfig
@@ -55,7 +55,7 @@ provisioning:
 ---
 apiVersion: v1alpha1
 kind: UserVolumeConfig
-name: local-path-provisioner
+name: longhorn
 provisioning:
   diskSelector:
     match: "!system_disk"

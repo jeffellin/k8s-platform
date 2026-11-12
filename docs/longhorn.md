@@ -31,7 +31,7 @@ It replaces the earlier hand-made version in `ellin-gitops/infra-pre/longhorn` (
 
 Longhorn's data path is `defaultSettings.defaultDataPath` (option `longhorn_data_path`). A Talos user volume named `X` is mounted at `/var/mnt/X`.
 
-- **New clusters:** name the user volume `longhorn` (so the path is `/var/mnt/longhorn`, the default). `hack/talos-gen-config.sh` still names it `local-path-provisioner`; changing that is a follow-up, to be done together with the mount below and tested on a throwaway cluster.
+- **New clusters:** name the user volume `longhorn` (so the path is `/var/mnt/longhorn`, the default). `hack/talos-gen-config.sh` now names it `longhorn` (clusters built after the `ellinj/talos-automation:dev` image is rebuilt). This is variant B: **untested** (no kubelet mount added yet, see below); test it on a throwaway cluster before relying on it. Why a separate disk: Longhorn filling `/var` would also starve images, logs and kubelet state (DiskPressure), and the settings below assume a dedicated disk. A separate disk is not wiped by an in-place `talosctl upgrade`, but it is recreated empty when a VM is replaced or removed.
 - **Existing clusters** (`lab-manager`, `demo1`, `demo2`, `talos-test`): the volume is called `local-path-provisioner`, mounted at `/var/mnt/local-path-provisioner`, and is empty now that local-path is gone. Set `longhorn_data_path: /var/mnt/local-path-provisioner` rather than re-provisioning disks. The name is misleading, the path works.
 - The Longhorn docs show a `UserVolumeConfig` with `grow: false` and a `maxSize`. Ours has `minSize` and takes the whole non-system disk, which is what we want for 50 GB.
 
