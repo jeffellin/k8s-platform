@@ -2,7 +2,11 @@
 # wait for PHASE=TornDown, delete the object, then hack/new-talos-cluster.sh --remove demo2.
 apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
-metadata: {name: demo2, namespace: default}
+metadata:
+  name: demo2
+  namespace: default
+  annotations:
+    platform.ellin.net/allow-data-loss: "true"   # F23 live test only: REMOVE after the scale-down (it allows data loss on any scale-down)
 spec:
   network:
     controlPlaneIP: 192.168.10.58
