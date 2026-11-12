@@ -30,6 +30,14 @@ spec:
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: demo2
+  - name: longhorn
+    dependsOn: []
+    vars:
+      cert_email: jeff@ellin.net
+      aws_region: us-east-1
+      zone_id: ZM4W2IR7IZJ3M
+      external_dns_txt_id: demo2
+      longhorn_replicas: '1'
   - name: contour
     dependsOn:
     - name: metallb-config
