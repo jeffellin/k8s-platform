@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # Talos: storage lives on the `local-path-provisioner` user volume -> /var/mnt/local-path-provisioner
+# NOTE: clusters built after 2026-11-12 name the data volume `longhorn` (/var/mnt/longhorn); change the path below before using this app on them.
 resources:
   - https://github.com/rancher/local-path-provisioner/deploy?ref=v0.0.31
 patches:
