@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
 - demo1.yaml
 - demo2.yaml
+- demo3.yaml

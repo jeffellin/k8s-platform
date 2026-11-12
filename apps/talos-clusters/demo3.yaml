@@ -1,0 +1,11 @@
+# Created by hack/new-talos-cluster.sh. Teardown: kubectl annotate taloscluster demo3 platform.ellin.net/teardown=true,
+# wait for PHASE=TornDown, delete the object, then hack/new-talos-cluster.sh --remove demo3.
+apiVersion: platform.ellin.net/v1alpha1
+kind: TalosCluster
+metadata: {name: demo3, namespace: default}
+spec:
+  node: pve2
+  network:
+    controlPlaneIP: 192.168.10.61
+    workerIPs: [192.168.10.62, 192.168.10.63]
+  workers: {count: 2}
