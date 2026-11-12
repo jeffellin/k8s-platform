@@ -35,6 +35,10 @@ Longhorn's data path is `defaultSettings.defaultDataPath` (option `longhorn_data
 - **Existing clusters** (`lab-manager`, `demo1`, `demo2`, `talos-test`): the volume is called `local-path-provisioner`, mounted at `/var/mnt/local-path-provisioner`, and is empty now that local-path is gone. Set `longhorn_data_path: /var/mnt/local-path-provisioner` rather than re-provisioning disks. The name is misleading, the path works.
 - The Longhorn docs show a `UserVolumeConfig` with `grow: false` and a `maxSize`. Ours has `minSize` and takes the whole non-system disk, which is what we want for 50 GB.
 
+### Option A: no user volume at all (a directory on `/var`)
+
+`/var` is writable on Talos: on a `demo2` worker it is `/dev/sda5` (xfs, rw, the 64 GB EPHEMERAL partition of the system disk, ~1 GB used) and `/var/mnt` already exists. `/var/mnt/longhorn`, the default path, can simply be a directory there: no machine-config change and no disk change. That makes it the quickest trial and it tests the mount question below straight away. The catch: replicas then share the system disk with container images, logs and (on a control plane) etcd, and the 50 GB data disk (`/dev/sdb1`, mounted at `/var/mnt/local-path-provisioner` with `noexec,nosuid,nodev`) stays unused. If Longhorn fills the disk the node can suffer, which a dedicated disk avoids; the 10% / 15% reserve settings below reduce but do not remove that risk. EPHEMERAL survives reboots and upgrades and is wiped by a Talos reset (which is what a scale-down does). Unverified: whether Longhorn creates the directory itself there. Decide between A (system disk) and B (dedicated disk) after the trial; B stays the leaning for anything permanent.
+
 ### Kubelet bind mount (conflicting sources)
 
 The Longhorn Talos page says the data path must also be bind-mounted into the kubelet with shared propagation:
@@ -93,7 +97,7 @@ Longhorn disables scheduling on a cordoned node. With `block-if-contains-last-re
 
 ## Trial plan (needs your go-ahead)
 
-On `demo2` (1 worker, throwaway): set `longhorn_replicas: "1"` and `longhorn_data_path: /var/mnt/local-path-provisioner`, apply the kubelet mount to the worker with `talosctl patch`, enable `longhorn` for `demo2` in `clusters.yaml`. Check: HelmRelease Ready, StorageClass `longhorn` default, a PVC and pod, then recreate the `scaletest` StatefulSet on it. Then 2 workers with 2 replicas and run the F1 scale-down with volumes present, to see whether the drain is blocked as described above.
+On `demo2` (1 worker, throwaway): first variant A (default path `/var/mnt/longhorn` on `/var`, no node change): set `longhorn_replicas: "1"` and enable `longhorn` for `demo2` in `clusters.yaml`. If volumes fail to attach, add the kubelet mount to the worker with `talosctl patch`. Then repeat with variant B (`longhorn_data_path: /var/mnt/local-path-provisioner`, the 50 GB disk) to compare. Check: HelmRelease Ready, StorageClass `longhorn` default, a PVC and pod, then recreate the `scaletest` StatefulSet on it. Then 2 workers with 2 replicas and run the F1 scale-down with volumes present, to see whether the drain is blocked as described above.
 
 ## Sources
 
