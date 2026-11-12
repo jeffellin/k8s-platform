@@ -86,6 +86,9 @@ clusters:
         options:
           metal_lb_address_pool: 192.168.11.25-192.168.11.34
       - name: metrics-server
+      - name: longhorn                      # F22 trial, variant A: default path /var/mnt/longhorn on the system disk (docs/longhorn.md)
+        options:
+          longhorn_replicas: "1"            # one worker
       - name: contour
       - name: cert-manager
       - name: cluster-issuers
