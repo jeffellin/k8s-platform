@@ -1,6 +1,6 @@
 # Longhorn on the Talos clusters
 
-Status (2026-11-12): the app exists (`apps/longhorn/`) but is **not enabled on any cluster**. local-path was retired the same day (backlog F22) and the clusters currently have no StorageClass. Nothing here has run on a live cluster yet; the trial plan is at the end.
+Status (2026-11-12): the app exists (`apps/longhorn/`). local-path was retired the same day (backlog F22). **Trial variant A passed on `demo2`** (1 worker, 1 replica, default path `/var/mnt/longhorn` on the system disk): enabled via PR #39 only; see "Trial results" at the end. Not enabled on any other cluster.
 
 It replaces the earlier hand-made version in `ellin-gitops/infra-pre/longhorn` (a kustomization over the raw `longhorn.yaml` manifest, v1.5.1, no Talos settings, no pinning). Now it is a Flux `HelmRelease` of the `longhorn` chart, pinned to `1.13.x`, with Talos-specific settings and a few homelab optimizations.
 
@@ -25,7 +25,7 @@ It replaces the earlier hand-made version in `ellin-gitops/infra-pre/longhorn` (
 | Namespace Pod Security `privileged` | Done in `apps/longhorn/namespace.yaml` (Talos defaults to `baseline`). |
 | Kubernetes 1.34 or later | Chart 1.13.0 requires `>=1.34.0-0`; we run 1.37.1. |
 | A data disk Longhorn can use | Every worker already has a second 50 GB disk (scsi1) mounted by a Talos `UserVolumeConfig`. See below. |
-| Kubelet `extraMounts` bind for the data path | **Not applied anywhere yet; to be verified.** See below. |
+| Kubelet `extraMounts` bind for the data path | **Not needed** with a plain directory on `/var` (variant A, verified on `demo2`: the volume attached and a pod wrote and read it). Not yet tried with a separate user volume (variant B). See below. |
 
 ### Data disk
 
@@ -35,7 +35,13 @@ Longhorn's data path is `defaultSettings.defaultDataPath` (option `longhorn_data
 - **Existing clusters** (`lab-manager`, `demo1`, `demo2`, `talos-test`): the volume is called `local-path-provisioner`, mounted at `/var/mnt/local-path-provisioner`, and is empty now that local-path is gone. Set `longhorn_data_path: /var/mnt/local-path-provisioner` rather than re-provisioning disks. The name is misleading, the path works.
 - The Longhorn docs show a `UserVolumeConfig` with `grow: false` and a `maxSize`. Ours has `minSize` and takes the whole non-system disk, which is what we want for 50 GB.
 
-### Kubelet bind mount (conflicting sources)
+### Option A: no user volume at all (a directory on `/var`)
+
+`/var` is writable on Talos: on a `demo2` worker it is `/dev/sda5` (xfs, rw, the 64 GB EPHEMERAL partition of the system disk, ~1 GB used) and `/var/mnt` already exists. `/var/mnt/longhorn`, the default path, can simply be a directory there: no machine-config change and no disk change. That makes it the quickest trial and it tests the mount question below straight away. The catch: replicas then share the system disk with container images, logs and (on a control plane) etcd, and the 50 GB data disk (`/dev/sdb1`, mounted at `/var/mnt/local-path-provisioner` with `noexec,nosuid,nodev`) stays unused. If Longhorn fills the disk the node can suffer, which a dedicated disk avoids; the 10% / 15% reserve settings below reduce but do not remove that risk. EPHEMERAL survives reboots and upgrades and is wiped by a Talos reset (which is what a scale-down does). **Verified on `demo2`:** Longhorn created the directory itself and registered the disk (64 GB, ~61 GB available). Decide between A (system disk) and B (dedicated disk) before relying on it; B stays the leaning for anything permanent.
+
+### Kubelet bind mount (conflicting sources; settled for variant A)
+
+**Result on `demo2` (variant A, Talos 1.14.5, Longhorn 1.13.0): no bind mount and no machine-config change were needed.** Variant B (a separate user volume) is still untested; the text below applies to it.
 
 The Longhorn Talos page says the data path must also be bind-mounted into the kubelet with shared propagation:
 
@@ -93,7 +99,7 @@ Longhorn disables scheduling on a cordoned node. With `block-if-contains-last-re
 
 ## Trial plan (needs your go-ahead)
 
-On `demo2` (1 worker, throwaway): set `longhorn_replicas: "1"` and `longhorn_data_path: /var/mnt/local-path-provisioner`, apply the kubelet mount to the worker with `talosctl patch`, enable `longhorn` for `demo2` in `clusters.yaml`. Check: HelmRelease Ready, StorageClass `longhorn` default, a PVC and pod, then recreate the `scaletest` StatefulSet on it. Then 2 workers with 2 replicas and run the F1 scale-down with volumes present, to see whether the drain is blocked as described above.
+On `demo2` (1 worker, throwaway): first variant A (default path `/var/mnt/longhorn` on `/var`, no node change): set `longhorn_replicas: "1"` and enable `longhorn` for `demo2` in `clusters.yaml`. If volumes fail to attach, add the kubelet mount to the worker with `talosctl patch`. Then repeat with variant B (`longhorn_data_path: /var/mnt/local-path-provisioner`, the 50 GB disk) to compare. Check: HelmRelease Ready, StorageClass `longhorn` default, a PVC and pod, then recreate the `scaletest` StatefulSet on it. Then 2 workers with 2 replicas and run the F1 scale-down with volumes present, to see whether the drain is blocked as described above.
 
 ## Sources
 
@@ -102,3 +108,14 @@ On `demo2` (1 worker, throwaway): set `longhorn_replicas: "1"` and `longhorn_dat
 - Longhorn settings reference: https://longhorn.io/docs/1.13.0/references/settings/
 - Longhorn important notes: https://longhorn.io/docs/1.13.0/important-notes/
 - Longhorn Helm chart: https://charts.longhorn.io (1.13.0, `kubeVersion >=1.34.0-0`)
+
+## Trial results (2026-11-12, `demo2`, variant A)
+
+Enabled with PR #39 (`longhorn_replicas: "1"`, default data path). Timeline and findings:
+
+- HelmRelease `InstallSucceeded` in about 4 minutes; the `longhorn` StorageClass is the default. Longhorn created `/var/mnt/longhorn` itself and registered the disk (64 GB, ~61 GB available, Ready and Schedulable).
+- **The `instance-manager` image took about 10 minutes to pull** (the worker has a slow path to its storage): volumes cannot attach until it runs. The 15 minute install timeout was enough, but it is close (F20).
+- A 1 GiB PVC and a pod: PVC Bound in ~25 s after the instance manager ran, attach succeeded, the pod wrote `hello-longhorn` and read it back; Longhorn volume `attached`, `healthy`, 1 replica. After deleting the pod, a new pod on the same PVC read the file back.
+- Only `longhorn-system` is privileged; the test namespace needed no exception (the test pods only drew Pod Security warnings about their missing securityContext).
+
+Not yet tested: variant B (50 GB disk), 2 workers with 2 replicas, F1 scale-down and drain with Longhorn volumes, node reboot, backups.
