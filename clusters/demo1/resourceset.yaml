@@ -23,13 +23,6 @@ spec:
       zone_id: ZM4W2IR7IZJ3M
       external_dns_txt_id: demo1
       metal_lb_address_pool: 192.168.11.15-192.168.11.24
-  - name: local-path-provisioner
-    dependsOn: []
-    vars:
-      cert_email: jeff@ellin.net
-      aws_region: us-east-1
-      zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: demo1
   - name: metrics-server
     dependsOn: []
     vars:
