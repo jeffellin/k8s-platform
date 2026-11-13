@@ -106,7 +106,7 @@ Example: a volume has 2 replicas and you remove a worker so only 1 is left. Repl
 4. **Scale down as usual** (`hack/scale-down-check.sh`, edit the XR, PR, merge). If the drain is blocked (exit 4), a volume still has its last healthy replica on the node: go back to step 3.
 5. **Delete the stale Longhorn node** once the Kubernetes Node is gone: `kubectl -n longhorn-system delete nodes.longhorn.io <worker>`. Otherwise it stays `Ready=False` and its disk counts as unavailable.
 
-The `demo2` test showed the failure above. The commands here come from the Longhorn docs and have not been run on a cluster yet. See `docs/longhorn.md`, "Drains and scale-down".
+The `demo2` test showed the failure above (removing a worker without these steps). Steps 2 to 4 were then run on `demo3` (2 workers to 1, volume with 2 replicas): the volume stayed `healthy`, the scale-down Job completed and the Longhorn node object for the removed worker was already gone, so step 5 was not needed after a clean eviction (keep it as a check: `kubectl -n longhorn-system get nodes.longhorn.io`). Before the eviction `hack/scale-down-check.sh` warns that the instance-manager PodDisruptionBudgets allow 0 disruptions; that clears once the node has no replicas. See `docs/longhorn.md`, "Trial results (`demo3`)".
 
 **Not supported yet: do not try**
 - **Reducing to 0 workers** (N -> 0): not supported; the control plane would need its taint removed again. Remove workers down to 1, or rebuild.
