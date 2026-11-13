@@ -7,6 +7,7 @@ metadata:
   namespace: default
   annotations:
     platform.ellin.net/allow-data-loss: "true"   # F23 live test only: REMOVE after the scale-down (it allows data loss on any scale-down)
+    platform.ellin.net/teardown: "true"
 spec:
   network:
     controlPlaneIP: 192.168.10.58
