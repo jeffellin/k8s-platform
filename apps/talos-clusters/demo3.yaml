@@ -3,7 +3,7 @@
 apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
 metadata:
-  name: demo2
+  name: demo3
   namespace: default
   annotations:
     platform.ellin.net/allow-data-loss: "true"   # F23 live test only: REMOVE after the scale-down (it allows data loss on any scale-down)
