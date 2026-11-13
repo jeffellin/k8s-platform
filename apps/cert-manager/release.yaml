@@ -10,6 +10,13 @@ kind: HelmRelease
 metadata: {name: cert-manager, namespace: cert-manager}
 spec:
   interval: 30m
+  # Slow image pulls (F20): give installs time and keep retrying instead of going Failed.
+  install:
+    timeout: 15m
+    remediation: {retries: -1}
+  upgrade:
+    timeout: 15m
+    remediation: {retries: 3}
   chart:
     spec:
       chart: cert-manager
