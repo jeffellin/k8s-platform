@@ -36,6 +36,8 @@ spec:
           {{- $name := $xr.metadata.name -}}
           {{- /* Job pod templates are immutable: bump $rev whenever a talos/verify/platform Job spec changes so Crossplane recreates the Jobs (all scripts are idempotent). */ -}}
           {{- $rev := "r3" -}}
+          {{- /* The platform Job has its own revision so a change to it re-runs only that (idempotent) layer, not talos/verify, on live clusters. */ -}}
+          {{- $prev := "p2" -}}
           {{- $teardown := eq (dig "metadata" "annotations" "platform.ellin.net/teardown" "" $xr) "true" -}}
           {{- $node := $xr.spec.node | default $px.defaultNode -}}
           {{- $nodeCfg := index $px.nodes $node -}}
@@ -261,13 +263,15 @@ spec:
           {{- $talosDone := false -}}
           {{- $verifyDone := false -}}
           {{- $platformDone := false -}}
+          {{- $platformFailed := false -}}
           {{- if $vmsReady }}
           {{- $tobs := (index ($.observed.resources | default dict) (printf "talos-%s-%s" $name $rev)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $tobs)) 0 }}{{ $talosDone = true }}{{ end }}
           {{- $vobs := (index ($.observed.resources | default dict) (printf "verify-%s-%s" $name $rev)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $vobs)) 0 }}{{ $verifyDone = true }}{{ end }}
-          {{- $pobs := (index ($.observed.resources | default dict) (printf "platform-%s-%s" $name $rev)) | default dict -}}
+          {{- $pobs := (index ($.observed.resources | default dict) (printf "platform-%s-%s" $name $prev)) | default dict -}}
           {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $pobs)) 0 }}{{ $platformDone = true }}{{ end }}
+          {{- if gt (int (dig "resource" "status" "atProvider" "manifest" "status" "failed" 0 $pobs)) 0 }}{{ if not $platformDone }}{{ $platformFailed = true }}{{ end }}{{ end }}
           ---
           apiVersion: kubernetes.m.crossplane.io/v1alpha1
           kind: Object
@@ -407,9 +411,9 @@ spec:
           apiVersion: kubernetes.m.crossplane.io/v1alpha1
           kind: Object
           metadata:
-            name: platform-{{ $name }}-{{ $rev }}
+            name: platform-{{ $name }}-{{ $prev }}
             annotations:
-              gotemplating.fn.crossplane.io/composition-resource-name: platform-{{ $name }}-{{ $rev }}
+              gotemplating.fn.crossplane.io/composition-resource-name: platform-{{ $name }}-{{ $prev }}
               gotemplating.fn.crossplane.io/ready: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}
           spec:
             providerConfigRef: {kind: ClusterProviderConfig, name: default}
@@ -418,12 +422,12 @@ spec:
                 apiVersion: batch/v1
                 kind: Job
                 metadata:
-                  name: platform-{{ $name }}-{{ $rev }}
+                  name: platform-{{ $name }}-{{ $prev }}
                   namespace: talos-automation
                   labels: {platform.ellin.net/cluster: {{ $name }}}
                 spec:
-                  backoffLimit: 3
-                  activeDeadlineSeconds: 3000
+                  backoffLimit: 6
+                  activeDeadlineSeconds: 7200   # slow storage/links (F20): image pulls can take ~5 min each
                   template:
                     spec:
                       serviceAccountName: cluster-up
@@ -474,14 +478,21 @@ spec:
                           retry env AGE_KEY_FILE="$KEY" bootstrap/bootstrap.sh "$N"
                           want=$(python3 -I -c "import yaml;print(len(yaml.safe_load(open('clusters.yaml'))['clusters']['$N']['apps']))")
                           echo "waiting for $want app kustomizations"
-                          for i in $(seq 1 150); do
+                          for i in $(seq 1 600); do
                             have=$(kubectl -n flux-system get kustomization --no-headers 2>/dev/null | grep -vc '^flux-system ' || true)
                             notready=$(kubectl -n flux-system get kustomization --no-headers 2>/dev/null | grep -v True | wc -l)
                             echo "kustomizations: $have/$want, not ready: $notready"
                             [ "$have" -ge "$want" ] && [ "$notready" -eq 0 ] && { kubectl -n flux-system get kustomization; echo "platform ready: $N"; exit 0; }
+                            # every 2 min say WHICH ones are not ready, so a slow pull is told apart from a real failure
+                            if [ $((i % 12)) -eq 0 ]; then
+                              echo "--- not ready ($(date -u +%T)):"
+                              kubectl -n flux-system get kustomization --no-headers 2>/dev/null | grep -v True || true
+                              kubectl get helmrelease -A --no-headers 2>/dev/null | grep -v True || true
+                              kubectl get pods -A --no-headers 2>/dev/null | grep -E 'ContainerCreating|ImagePull|ErrImage|Pending' || true
+                            fi
                             sleep 10
                           done
-                          echo "timed out waiting for Flux"; kubectl -n flux-system get kustomization; exit 1
+                          echo "timed out waiting for Flux (100 min)"; kubectl -n flux-system get kustomization; kubectl get helmrelease -A; exit 1
                         securityContext:
                           allowPrivilegeEscalation: false
                           capabilities: {drop: [ALL]}
@@ -498,7 +509,7 @@ spec:
           - {type: ScalingDown, status: {{ if $scaling }}"True"{{ else }}"False"{{ end }}, reason: {{ if $sfailed }}ScaleDownBlocked{{ else if $scaling }}InProgress{{ else }}NotScaling{{ end }}{{ if $sfailed }}, message: "Scale-down stopped (data at risk or a blocked drain): read kubectl -n talos-automation logs job/scaledown-{{ $name }}-{{ $rev }}; fix it, then delete that Job (not the Object) to retry. See the runbook, section Scale down."{{ end }}, target: Composite}
           - {type: TalosReady, status: {{ if $talosDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $talosDone }}ClusterBootstrapped{{ else }}Pending{{ end }}, target: Composite}
           - {type: KubernetesReady, status: {{ if $verifyDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $verifyDone }}AllNodesReady{{ else }}Pending{{ end }}, target: Composite}
-          - {type: PlatformReady, status: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $platformDone }}FluxSynced{{ else }}Pending{{ end }}, target: Composite}
+          - {type: PlatformReady, status: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $platformDone }}FluxSynced{{ else if $platformFailed }}PlatformJobFailed, message: "Platform Job gave up: read kubectl -n talos-automation logs job/platform-{{ $name }}-{{ $prev }}; delete that Job (not the Object) to retry. Slow storage or links are the usual cause (F20)."{{ else }}Pending{{ end }}, target: Composite}
           ---
           apiVersion: platform.ellin.net/v1alpha1
           kind: TalosCluster
