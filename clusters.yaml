@@ -73,23 +73,3 @@ clusters:
       - name: hello-nginx
         options:
           hello_host: hello-demo1.ellin.net
-  demo3:                              # Crossplane-built Talos cluster (XR apps/talos-clusters/demo3.yaml): CP 192.168.10.61, 2 worker(s)
-    secrets: manager
-    vars:
-      external_dns_txt_id: demo3
-    apps:
-      - name: metallb
-      - name: metallb-config
-        options:
-          metal_lb_address_pool: 192.168.11.50-192.168.11.59
-      - name: metrics-server
-      - name: longhorn                      # variant B: data on the user volume `longhorn` (/var/mnt/longhorn), 2 workers
-        options:
-          longhorn_replicas: "2"
-      - name: contour
-      - name: cert-manager
-      - name: cluster-issuers
-      - name: external-dns
-      - name: hello-nginx
-        options:
-          hello_host: hello-demo3.ellin.net
