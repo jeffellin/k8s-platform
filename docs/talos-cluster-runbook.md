@@ -111,7 +111,9 @@ What you can change today, and how:
 Deleting is two steps by design (D15): destroying the VMs is explicit, and removing the object is blocked until that has happened.
 A plain `kubectl delete taloscluster` is refused with a message explaining this.
 
-1. **Tear down (destroys VMs and manager-side Secrets).** On the manager:
+1. **Tear down (destroys VMs and manager-side Secrets).** Preferred, through Git (no hand-edited YAML): `hack/new-talos-cluster.sh --teardown <name>` writes the
+   annotation into `apps/talos-clusters/<name>.yaml` correctly (inside `metadata.annotations`, quoted `"true"`); PR and merge, and Flux applies it. Or directly on the manager
+   (Flux reverts this if the Git file lacks the annotation, so only for a quick test):
    ```bash
    kubectl -n default annotate taloscluster <name> platform.ellin.net/teardown=true
    kubectl get taloscluster <name> -w                    # wait for PHASE=TornDown (about a minute)
@@ -121,7 +123,7 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
    `<name>-talos-secrets`, `-talosconfig`, `-kubeconfig`, `-age-key`. It refuses to touch `lab-manager`. It cannot be undone; the cluster's data is gone.
 2. **Remove it from Git, then Flux deletes the XR.** From the worktree:
    ```bash
-   hack/new-talos-cluster.sh --remove <name>     # exact inverse of create: XR file, kustomization line, clusters.yaml entry, clusters/<name>/
+   hack/new-talos-cluster.sh --remove <name>     # exact inverse of create: XR file, kustomization line, clusters.yaml entry, clusters/<name>/ (also cleans leftovers if some are already gone)
    ```
    PR and merge. Flux prunes the XR (allowed because it is `TornDown`). Do not `kubectl delete` the XR while it is still in Git: Flux would recreate it and rebuild the cluster.
 3. **Manual cleanup.**
