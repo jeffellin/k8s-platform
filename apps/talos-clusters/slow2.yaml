@@ -2,7 +2,11 @@
 # wait for PHASE=TornDown, delete the object, then hack/new-talos-cluster.sh --remove slow2.
 apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
-metadata: {name: slow2, namespace: default}
+metadata:
+  name: slow2
+  namespace: default
+  annotations:
+    platform.ellin.net/teardown: "true"
 spec:
   node: pve2
   network:
