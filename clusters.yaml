@@ -91,3 +91,21 @@ clusters:
       - name: hello-nginx
         options:
           hello_host: hello-slow.ellin.net
+
+  slow2:                              # Crossplane-built Talos cluster (XR apps/talos-clusters/slow2.yaml): CP 192.168.10.66, 2 worker(s)
+    secrets: manager
+    vars:
+      external_dns_txt_id: slow2
+    apps:
+      - name: metallb
+      - name: metallb-config
+        options:
+          metal_lb_address_pool: 192.168.11.50-192.168.11.59
+      - name: metrics-server
+      - name: contour
+      - name: cert-manager
+      - name: cluster-issuers
+      - name: external-dns
+      - name: hello-nginx
+        options:
+          hello_host: hello-slow2.ellin.net
