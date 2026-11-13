@@ -7,5 +7,5 @@ spec:
   node: pve2
   network:
     controlPlaneIP: 192.168.10.61
-    workerIPs: [192.168.10.62, 192.168.10.63]
-  workers: {count: 2}
+    workerIPs: [192.168.10.62]
+  workers: {count: 1}
