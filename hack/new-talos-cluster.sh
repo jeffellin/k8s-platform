@@ -5,7 +5,8 @@
 #
 #   hack/new-talos-cluster.sh <name> [--workers N] [--cp-ip IP] [--worker-ips IP,IP] [--lb-range A-B]
 #                             [--hello-host HOST] [--node NODE] [--storage ID] [--alloc-doc PATH] [--write-alloc] [--dry-run]
-#   hack/new-talos-cluster.sh --remove <name>     # after teardown + delete (docs/crossplane-cluster-lifecycle.md 8.1)
+#   hack/new-talos-cluster.sh --teardown <name>   # step 1 of delete: puts the teardown annotation in apps/talos-clusters/<name>.yaml (F12)
+#   hack/new-talos-cluster.sh --remove <name>     # step 2, after teardown + delete (docs/crossplane-cluster-lifecycle.md 8.1); also cleans leftovers
 #
 # IPs/ranges are auto-picked as the lowest free ones, judged from the allocation doc (default
 # ../terraform/VLAN10-IP-ALLOCATION.md), the DHCP range, clusters.yaml and existing XRs. Without --write-alloc the
@@ -19,6 +20,7 @@ root = pathlib.Path(sys.argv[1])
 ap = argparse.ArgumentParser(prog="new-talos-cluster.sh")
 ap.add_argument("name", nargs="?")
 ap.add_argument("--remove", metavar="NAME")
+ap.add_argument("--teardown", metavar="NAME")
 ap.add_argument("--workers", type=int, default=0)
 ap.add_argument("--cp-ip"); ap.add_argument("--worker-ips"); ap.add_argument("--lb-range"); ap.add_argument("--hello-host")
 ap.add_argument("--node", help="Proxmox node for the VMs (must be in the EnvironmentConfig; default: its defaultNode)")
@@ -41,21 +43,74 @@ if not a.alloc_doc and not alloc_path.exists():
 def run_render():
     subprocess.run([sys.executable, str(root / "hack" / "render.py")], check=True)
 
+# ---------- teardown (F12) ----------
+TD_KEY = "platform.ellin.net/teardown"
+if a.teardown:
+    n = a.teardown
+    f = XRDIR / f"{n}.yaml"
+    if n in RESERVED: die(f"{n} is reserved (not a Crossplane-built cluster)")
+    if not f.exists(): die(f"{f.relative_to(root)} does not exist")
+    text = f.read_text()
+    before = yaml.safe_load(text)
+    if before.get("kind") != "TalosCluster" or before["metadata"]["name"] != n: die(f"{f.relative_to(root)} is not the TalosCluster '{n}'")
+    ann = (before["metadata"].get("annotations") or {})
+    if ann.get(TD_KEY) == "true": die(f"{n} already has the teardown annotation in {f.relative_to(root)}")
+    if TD_KEY in ann: die(f"{f.relative_to(root)} has a malformed {TD_KEY} (value {ann[TD_KEY]!r}); fix it by hand to the quoted string \"true\"")
+    lines = text.split("\n")
+    mi = next((i for i, l in enumerate(lines) if re.match(r"metadata:", l)), None)
+    if mi is None: die("no top-level 'metadata:' line found")
+    if re.match(r"metadata:\s*\{", lines[mi]):
+        # flow style (what the scaffold writes): expand to block style and add the annotation
+        md = before["metadata"]
+        block = ["metadata:"] + [f"  {k}: {v}" for k, v in md.items() if k != "annotations"]
+        if ann: block += ["  annotations:"] + [f'    {k}: "{v}"' if isinstance(v, str) else f"    {k}: {v}" for k, v in ann.items()]
+        else: block += ["  annotations:"]
+        block += [f'    {TD_KEY}: "true"']
+        lines[mi:mi + 1] = block
+    else:
+        # block style: add under an existing annotations: key, or create it right under metadata:
+        j = mi + 1
+        while j < len(lines) and (lines[j].startswith(" ") or not lines[j].strip()): j += 1
+        ai = next((i for i in range(mi + 1, j) if re.match(r"  annotations:\s*$", lines[i])), None)
+        if ai is not None: lines.insert(ai + 1, f'    {TD_KEY}: "true"')
+        else: lines[mi + 1:mi + 1] = ["  annotations:", f'    {TD_KEY}: "true"']
+    newtext = "\n".join(lines)
+    after = yaml.safe_load(newtext)   # validate: the annotation is a quoted string inside metadata, nothing else changed
+    exp = dict(before); exp["metadata"] = {**before["metadata"], "annotations": {**ann, TD_KEY: "true"}}
+    if after != exp: die("internal check failed: the edit would change more than the annotation; nothing written")
+    if n not in yaml.safe_load(CLUSTERS.read_text())["clusters"]: print(f"warning: {n} is not in clusters.yaml (already partly removed?)", file=sys.stderr)
+    if a.dry_run: print(f"would add {TD_KEY}: \"true\" to {f.relative_to(root)}"); sys.exit(0)
+    f.write_text(newtext)
+    kc = root / "_talos" / "lab-manager" / "kubeconfig"
+    if kc.exists() and subprocess.run(["which", "kubectl"], capture_output=True).returncode == 0:
+        r = subprocess.run(["kubectl", "--kubeconfig", str(kc), "apply", "--dry-run=server", "-f", str(f)], capture_output=True, text=True)
+        print("server dry-run: " + ("ok" if r.returncode == 0 else "FAILED\n" + r.stderr.strip()))
+    print(f"added the teardown annotation to {f.relative_to(root)}. Next:\n"
+          f"  1. review, commit, PR, merge (Flux applies it and the teardown Job runs)\n"
+          f"  2. wait: kubectl -n default get taloscluster {n}   (PHASE=TornDown)\n"
+          f"  3. hack/new-talos-cluster.sh --remove {n}, commit, PR, merge (Flux prunes the XR)\n"
+          f"  4. free its IPs/VM IDs/MetalLB range in VLAN10-IP-ALLOCATION.md")
+    sys.exit(0)
+
 # ---------- remove ----------
 if a.remove:
     n = a.remove
     text = CLUSTERS.read_text()
     new = re.sub(r"(?ms)(?:^\n)?^  %s:.*?(?=^  [a-z0-9][a-z0-9-]*:|\Z)" % re.escape(n), "", text)
-    if new == text: die(f"{n} not in clusters.yaml")
-    steps = [f"clusters.yaml: remove entry {n}", f"delete clusters/{n}/", f"delete {XRDIR.relative_to(root)}/{n}.yaml and its kustomization line"]
+    xr = XRDIR / f"{n}.yaml"
+    kline = re.search(r"(?m)^- %s\.yaml\n" % re.escape(n), KUST.read_text())
+    leftovers = [(label, p) for label, p in (("XR file", xr), ("rendered clusters/%s/" % n, root / "clusters" / n), ("keys/%s.pub" % n, root / "keys" / f"{n}.pub")) if p.exists()]
+    if new == text and not kline and not leftovers: die(f"nothing to remove for {n}: not in clusters.yaml, the Kustomization, or on disk")
+    steps = ([f"clusters.yaml: remove entry {n}"] if new != text else [f"clusters.yaml: no entry for {n} (already removed), skipping"]) \
+          + ([f"{KUST.relative_to(root)}: remove its line"] if kline else []) + [f"delete {l}" for l, _ in leftovers]
     if a.dry_run: print("would:\n  " + "\n  ".join(steps)); sys.exit(0)
-    CLUSTERS.write_text(new)
+    if new != text: CLUSTERS.write_text(new)
     k = re.sub(r"(?m)^- %s\.yaml\n" % re.escape(n), "", KUST.read_text())
     KUST.write_text(re.sub(r"resources:\n(?!-)", "resources: []\n", k))
-    (XRDIR / f"{n}.yaml").unlink(missing_ok=True)
+    xr.unlink(missing_ok=True)
     subprocess.run(["rm", "-rf", str(root / "clusters" / n), str(root / "keys" / f"{n}.pub")], check=True)
     run_render()
-    print("removed " + n + ". Also free its IPs/VM IDs/MetalLB range in VLAN10-IP-ALLOCATION.md.")
+    print("removed " + n + ": " + "; ".join(steps) + ". Also free its IPs/VM IDs/MetalLB range in VLAN10-IP-ALLOCATION.md.")
     sys.exit(0)
 
 # ---------- add ----------
