@@ -24,7 +24,9 @@ spec:
       sourceRef: {kind: HelmRepository, name: external-dns}
   values:
     provider: {name: aws}
-    policy: upsert-only      # chart schema requires it; never deletes records
+    # sync (F13): external-dns removes the records of sources that disappear, so teardown can clean DNS provider-agnostically (the teardown Job
+    # deletes the cluster's Ingresses/HTTPProxies/LB Services first). Deletions are scoped to records whose TXT owner is txtOwnerId (the cluster name).
+    policy: sync
     sources: [service, ingress, contour-httpproxy]
     txtOwnerId: ${external_dns_txt_id}
     extraArgs:
