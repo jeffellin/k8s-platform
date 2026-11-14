@@ -118,7 +118,7 @@ spec:
     spec:
       interval: 10m
       retryInterval: 1m
-      timeout: 10m
+      timeout: 20m   # >= HelmRelease install timeout (15m): a slow image pull must not fail the Kustomization first (F20)
       prune: true
       wait: true
       path: ./apps/<< inputs.name >>
