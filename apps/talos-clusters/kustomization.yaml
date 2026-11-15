@@ -5,3 +5,4 @@ resources:
 - demo1.yaml
 - slow.yaml
 - slow2.yaml
+- dnstest.yaml
