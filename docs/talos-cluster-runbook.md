@@ -131,6 +131,9 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
    kubectl get taloscluster <name> -w                    # wait for PHASE=TornDown (about a minute)
    kubectl -n talos-automation logs job/teardown-<name>-r3
    ```
+   Before the VMs go, the Job cleans up DNS (F13): it pauses Flux on the child (Kustomizations, HelmReleases, ResourceSets), deletes the cluster's Ingresses, HTTPProxies and
+   LoadBalancer Services, and waits up to 5 min for external-dns (`policy: sync`) to remove the records. This is best effort: an unreachable cluster or a missing log line only
+   prints `WARNING` in the Job log, and records may remain (check Route53). If the Job fails before the VMs are destroyed it resumes Flux. Skip with `DNS_CLEANUP=0`.
    The Job stops and purges only VMs named `<name>-(cp|w)-N` that carry the tags `talos` and their own name (workers first, then the control plane), then deletes
    `<name>-talos-secrets`, `-talosconfig`, `-kubeconfig`, `-age-key`. It refuses to touch `lab-manager`. It cannot be undone; the cluster's data is gone.
 2. **Remove it from Git, then Flux deletes the XR.** From the worktree:
@@ -140,7 +143,7 @@ A plain `kubectl delete taloscluster` is refused with a message explaining this.
    PR and merge. Flux prunes the XR (allowed because it is `TornDown`). Do not `kubectl delete` the XR while it is still in Git: Flux would recreate it and rebuild the cluster.
 3. **Manual cleanup.**
    - Free the IPs, VM IDs and the MetalLB range in `~/homelab/terraform/VLAN10-IP-ALLOCATION.md` (the teardown Job prints what to free) and commit it there.
-   - **Stale DNS (likely, not yet checked):** the deleted cluster's external-dns never gets to remove its Route53 records (`hello-<name>.ellin.net` A and TXT records, TXT owner id = `<name>`). Check Route53 and delete them.
+   - **Stale DNS:** the teardown Job now removes the records (see step 1) when the cluster is reachable; records from clusters torn down **before** F13 (e.g. `slow2`) and any WARNING cases remain. Original note: the deleted cluster's external-dns never gets to remove its Route53 records (`hello-<name>.ellin.net` A and TXT records, TXT owner id = `<name>`). Check Route53 and delete them.
    - Delete any kubeconfig/talosconfig files you saved locally.
 4. **Override:** `kubectl annotate taloscluster <name> platform.ellin.net/allow-delete=keep-vms` lets the object be deleted **without** destroying the VMs
    (for example to hand the VMs to something else). The VMs and Secrets stay behind; you own them.
