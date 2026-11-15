@@ -41,7 +41,11 @@ spec:
           {{- $teardown := eq (dig "metadata" "annotations" "platform.ellin.net/teardown" "" $xr) "true" -}}
           {{- $node := $xr.spec.node | default $px.defaultNode -}}
           {{- $nodeCfg := index $px.nodes $node -}}
-          {{- $tmpl := index $nodeCfg.templates $xr.spec.talosVersion -}}
+          {{- /* The VM and Talos Jobs describe how the nodes were CREATED, so they use the version the cluster was created with (status.createdTalosVersion,
+                 recorded on the first reconcile; clusters that predate the field fall back to spec.talosVersion). spec.talosVersion is the version the cluster
+                 should RUN: changing it must not change these Jobs (pod templates are immutable); the upgrade moves the nodes (backlog F2). */ -}}
+          {{- $createdVersion := dig "status" "createdTalosVersion" $xr.spec.talosVersion $xr -}}
+          {{- $tmpl := index $nodeCfg.templates $createdVersion -}}
           {{- $storage := $xr.spec.storage | default $nodeCfg.storage -}}
           {{- $ciStorage := $nodeCfg.cloudInitStorage | default "" -}}
           {{- $nodes := list -}}
@@ -120,6 +124,7 @@ spec:
           status:
             phase: {{ if $tdone }}TornDown{{ else }}TearingDown{{ end }}
           {{- else }}
+          {{- if not $tmpl }}{{ fail (printf "no Proxmox template for talosVersion %s on node %s: build it (hack/build-talos-template.sh) and add it to the EnvironmentConfig" $createdVersion $node) }}{{ end }}
           {{- $ready := 0 -}}
           {{- /* F1 scale-down. A worker the XR no longer lists is still present in the OBSERVED resources (its vm-<name>-w-N Object), which is
                  how we know it was removed: workers above the desired count are counted here, then not rendered again (they are handed to the
@@ -328,7 +333,7 @@ spec:
                         - {name: CLUSTER_NAME, value: {{ $name | quote }}}
                         - {name: CP_IP, value: {{ $xr.spec.network.controlPlaneIP | quote }}}
                         - {name: WORKER_IPS, value: {{ $workerIPs | quote }}}
-                        - {name: TALOS_VERSION, value: {{ $xr.spec.talosVersion | quote }}}
+                        - {name: TALOS_VERSION, value: {{ $createdVersion | quote }}}
                         - {name: SCHEMATIC, value: {{ $env.talos.schematic | quote }}}
                         - {name: PVE_ENDPOINT, value: {{ $px.endpoint | quote }}}
                         - {name: PVE_INSECURE, value: {{ if $px.insecureTLS }}"1"{{ else }}"0"{{ end }}}
@@ -518,6 +523,7 @@ spec:
             controlPlane:
               name: {{ $name }}-cp-1
               vmid: {{ $cpip := splitList "." $xr.spec.network.controlPlaneIP }}{{ printf "%d%03d" (index $cpip 2 | atoi) (index $cpip 3 | atoi) }}
+            createdTalosVersion: {{ $createdVersion }}
             workerCount: {{ $xr.spec.workers.count }}
             proxmoxEndpoint: {{ $px.endpoint }}
             metallbIgnoreExcludeLB: {{ eq (int $xr.spec.workers.count) 0 }}
