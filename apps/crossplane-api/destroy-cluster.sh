@@ -30,7 +30,7 @@ resume_flux() {
   [[ "$PAUSED" == 1 && -n "$CKC" ]] || return 0
   echo "resuming Flux on ${CLUSTER}"
   kubectl --kubeconfig "$CKC" --request-timeout=20s -n flux-system get resourceset -o name 2>/dev/null \
-    | xargs -r -n1 kubectl --kubeconfig "$CKC" -n flux-system annotate --overwrite fluxcd.controlplane.io/reconcile=enabled || true
+    | xargs -r -I{} kubectl --kubeconfig "$CKC" -n flux-system annotate --overwrite {} fluxcd.controlplane.io/reconcile=enabled || true
   for kind in kustomization helmrelease; do
     kubectl --kubeconfig "$CKC" --request-timeout=20s get "$kind" -A -o json 2>/dev/null \
       | jq -r '.items[] | "\(.metadata.namespace) \(.metadata.name)"' \
@@ -65,7 +65,7 @@ dns_cleanup() {
 
   echo "pausing Flux on ${CLUSTER} (so it does not recreate what is deleted next)"
   "${K[@]}" -n flux-system get resourceset -o name 2>/dev/null \
-    | xargs -r -n1 kubectl --kubeconfig "$CKC" -n flux-system annotate --overwrite fluxcd.controlplane.io/reconcile=disabled || true
+    | xargs -r -I{} kubectl --kubeconfig "$CKC" -n flux-system annotate --overwrite {} fluxcd.controlplane.io/reconcile=disabled || true
   PAUSED=1
   for kind in kustomization helmrelease; do
     "${K[@]}" get "$kind" -A -o json 2>/dev/null | jq -r '.items[] | "\(.metadata.namespace) \(.metadata.name)"' \
