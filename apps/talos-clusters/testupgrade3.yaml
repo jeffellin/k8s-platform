@@ -9,4 +9,5 @@ spec:
   network:
     controlPlaneIP: 192.168.10.64
     workerIPs: [192.168.10.65, 192.168.10.66, 192.168.10.67]
+  talosVersion: v1.14.6
   workers: {count: 3}
