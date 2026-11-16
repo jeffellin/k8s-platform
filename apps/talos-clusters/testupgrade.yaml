@@ -8,4 +8,5 @@ spec:
   storage: local-lvm
   network:
     controlPlaneIP: 192.168.10.63
+  talosVersion: v1.14.6
   workers: {count: 0}
