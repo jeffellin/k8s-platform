@@ -506,12 +506,85 @@ spec:
                       volumes:
                       - {name: work, emptyDir: {}}
           {{- end }}
+          {{- /* F2 upgrade. spec.talosVersion is what the cluster should RUN, status.talosVersion what it runs (starts as the creation version).
+                 When they differ and the cluster is built (or an upgrade Object already exists, so a blip in platformDone cannot delete a running upgrade),
+                 an upgrade Job runs the rolling `talosctl upgrade`. Once it succeeded, status.talosVersion becomes the target and the next reconcile stops
+                 rendering the Object (Crossplane then deletes it). Job names carry the target version. */ -}}
+          {{- $targetVersion := $xr.spec.talosVersion -}}
+          {{- $statusVersion := dig "status" "talosVersion" $createdVersion $xr -}}
+          {{- $uname := printf "upgrade-%s-%s" $name (replace "." "-" $targetVersion) -}}
+          {{- $uobs := (index ($.observed.resources | default dict) $uname) | default dict -}}
+          {{- $uexists := gt (len $uobs) 0 -}}
+          {{- $udone := gt (int (dig "resource" "status" "atProvider" "manifest" "status" "succeeded" 0 $uobs)) 0 -}}
+          {{- $ufailed := and (not $udone) (gt (int (dig "resource" "status" "atProvider" "manifest" "status" "failed" 0 $uobs)) 0) -}}
+          {{- $upRender := and (ne $targetVersion $statusVersion) (or $uexists (and $platformDone (not $scaling))) -}}
+          {{- $upgrading := and $upRender (not $udone) -}}
+          {{- $curVersion := $statusVersion -}}
+          {{- if and $upRender $udone }}{{ $curVersion = $targetVersion }}{{ end }}
+          {{- if $upRender }}
+          ---
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: {{ $uname }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: {{ $uname }}
+              gotemplating.fn.crossplane.io/ready: {{ if $udone }}"True"{{ else }}"False"{{ end }}
+          spec:
+            providerConfigRef: {kind: ClusterProviderConfig, name: default}
+            forProvider:
+              manifest:
+                apiVersion: batch/v1
+                kind: Job
+                metadata:
+                  name: {{ $uname }}
+                  namespace: talos-automation
+                  labels: {platform.ellin.net/cluster: {{ $name }}}
+                spec:
+                  backoffLimit: 1
+                  activeDeadlineSeconds: 14400
+                  template:
+                    spec:
+                      serviceAccountName: cluster-up
+                      restartPolicy: Never
+                      securityContext:
+                        runAsNonRoot: true
+                        runAsUser: 10001
+                        seccompProfile: {type: RuntimeDefault}
+                      containers:
+                      - name: upgrade
+                        image: {{ $env.talos.image }}
+                        imagePullPolicy: Always
+                        command: [bash, /scripts/upgrade-cluster.sh]
+                        env:
+                        - {name: CLUSTER, value: {{ $name | quote }}}
+                        - {name: TARGET_VERSION, value: {{ $targetVersion | quote }}}
+                        - {name: SCHEMATIC, value: {{ $env.talos.schematic | quote }}}
+                        - {name: CP_IP, value: {{ $xr.spec.network.controlPlaneIP | quote }}}
+                        - {name: WORKER_IPS, value: {{ $workerIPs | quote }}}
+                        - {name: HOME, value: /tmp}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                        volumeMounts:
+                        - {name: scripts, mountPath: /scripts}
+                        - {name: kube, mountPath: /kube, readOnly: true}
+                        - {name: talos, mountPath: /talos, readOnly: true}
+                      volumes:
+                      - name: scripts
+                        configMap: {name: upgrade-cluster}
+                      - name: kube
+                        secret: {secretName: {{ $name }}-kubeconfig}
+                      - name: talos
+                        secret: {secretName: {{ $name }}-talosconfig}
+          {{- end }}
           ---
           apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
           kind: ClaimConditions
           conditions:
           - {type: VMsReady, status: {{ if $vmsReady }}"True"{{ else }}"False"{{ end }}, reason: {{ if $vmsReady }}AllVMsCloned{{ else if $scaling }}ScalingDown{{ else }}VMsCreating{{ end }}, target: Composite}
           - {type: ScalingDown, status: {{ if $scaling }}"True"{{ else }}"False"{{ end }}, reason: {{ if $sfailed }}ScaleDownBlocked{{ else if $scaling }}InProgress{{ else }}NotScaling{{ end }}{{ if $sfailed }}, message: "Scale-down stopped (data at risk or a blocked drain): read kubectl -n talos-automation logs job/scaledown-{{ $name }}-{{ $rev }}; fix it, then delete that Job (not the Object) to retry. See the runbook, section Scale down."{{ end }}, target: Composite}
+          - {type: Upgrading, status: {{ if $upgrading }}"True"{{ else }}"False"{{ end }}, reason: {{ if $ufailed }}UpgradeFailed{{ else if $upgrading }}InProgress{{ else }}NotUpgrading{{ end }}{{ if $ufailed }}, message: "Talos upgrade to {{ $targetVersion }} stopped: read kubectl -n talos-automation logs job/{{ $uname }} (or cm upgrade-{{ $name }}-last); fix it, then delete that Job (not the Object) to retry. Nodes already upgraded are skipped on the retry."{{ end }}, target: Composite}
           - {type: TalosReady, status: {{ if $talosDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $talosDone }}ClusterBootstrapped{{ else }}Pending{{ end }}, target: Composite}
           - {type: KubernetesReady, status: {{ if $verifyDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $verifyDone }}AllNodesReady{{ else }}Pending{{ end }}, target: Composite}
           - {type: PlatformReady, status: {{ if $platformDone }}"True"{{ else }}"False"{{ end }}, reason: {{ if $platformDone }}FluxSynced{{ else if $platformFailed }}PlatformJobFailed, message: "Platform Job gave up: read kubectl -n talos-automation logs job/platform-{{ $name }}-{{ $prev }}; delete that Job (not the Object) to retry. Slow storage or links are the usual cause (F20)."{{ else }}Pending{{ end }}, target: Composite}
@@ -519,11 +592,12 @@ spec:
           apiVersion: platform.ellin.net/v1alpha1
           kind: TalosCluster
           status:
-            phase: {{ if $scaling }}ScalingDown{{ else if $platformDone }}Ready{{ else if $verifyDone }}PlatformApplying{{ else if $talosDone }}KubernetesVerifying{{ else if $vmsReady }}TalosApplying{{ else }}VMsCreating{{ end }}
+            phase: {{ if $scaling }}ScalingDown{{ else if $upgrading }}Upgrading{{ else if $platformDone }}Ready{{ else if $verifyDone }}PlatformApplying{{ else if $talosDone }}KubernetesVerifying{{ else if $vmsReady }}TalosApplying{{ else }}VMsCreating{{ end }}
             controlPlane:
               name: {{ $name }}-cp-1
               vmid: {{ $cpip := splitList "." $xr.spec.network.controlPlaneIP }}{{ printf "%d%03d" (index $cpip 2 | atoi) (index $cpip 3 | atoi) }}
             createdTalosVersion: {{ $createdVersion }}
+            talosVersion: {{ $curVersion }}
             workerCount: {{ $xr.spec.workers.count }}
             proxmoxEndpoint: {{ $px.endpoint }}
             metallbIgnoreExcludeLB: {{ eq (int $xr.spec.workers.count) 0 }}

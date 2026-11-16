@@ -93,6 +93,7 @@ spec:
                   name: {type: string}
                   vmid: {type: integer}
               workerCount: {type: integer}
+              talosVersion: {type: string, description: "Talos version the cluster runs (starts as createdTalosVersion; set to spec.talosVersion when an upgrade Job succeeds)."}
               createdTalosVersion: {type: string, description: "Talos version the cluster was created with (set once; picks the template). spec.talosVersion is the version it should run."}
               vms:
                 type: object
