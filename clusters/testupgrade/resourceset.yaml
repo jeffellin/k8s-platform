@@ -12,7 +12,8 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
+      external_dns_txt_id: testupgrade
+      metallb_ignore_exclude_lb: 'true'
   - name: metallb-config
     dependsOn:
     - name: metallb
@@ -20,7 +21,7 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
+      external_dns_txt_id: testupgrade
       metal_lb_address_pool: 192.168.11.25-192.168.11.34
   - name: metrics-server
     dependsOn: []
@@ -28,7 +29,7 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
+      external_dns_txt_id: testupgrade
   - name: contour
     dependsOn:
     - name: metallb-config
@@ -36,14 +37,14 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
+      external_dns_txt_id: testupgrade
   - name: cert-manager
     dependsOn: []
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
+      external_dns_txt_id: testupgrade
   - name: cluster-issuers
     dependsOn:
     - name: cert-manager
@@ -51,14 +52,14 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
+      external_dns_txt_id: testupgrade
   - name: external-dns
     dependsOn: []
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
+      external_dns_txt_id: testupgrade
   - name: hello-nginx
     dependsOn:
     - name: contour
@@ -68,8 +69,8 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: slow
-      hello_host: hello-slow.ellin.net
+      external_dns_txt_id: testupgrade
+      hello_host: hello-testupgrade.ellin.net
   resourcesTemplate: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization

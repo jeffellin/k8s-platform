@@ -12,8 +12,7 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
-      metallb_ignore_exclude_lb: 'true'
+      external_dns_txt_id: testupgrade3
   - name: metallb-config
     dependsOn:
     - name: metallb
@@ -21,15 +20,15 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
-      metal_lb_address_pool: 192.168.11.60-192.168.11.69
+      external_dns_txt_id: testupgrade3
+      metal_lb_address_pool: 192.168.11.50-192.168.11.59
   - name: metrics-server
     dependsOn: []
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
+      external_dns_txt_id: testupgrade3
   - name: contour
     dependsOn:
     - name: metallb-config
@@ -37,14 +36,14 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
+      external_dns_txt_id: testupgrade3
   - name: cert-manager
     dependsOn: []
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
+      external_dns_txt_id: testupgrade3
   - name: cluster-issuers
     dependsOn:
     - name: cert-manager
@@ -52,14 +51,14 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
+      external_dns_txt_id: testupgrade3
   - name: external-dns
     dependsOn: []
     vars:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
+      external_dns_txt_id: testupgrade3
   - name: hello-nginx
     dependsOn:
     - name: contour
@@ -69,8 +68,8 @@ spec:
       cert_email: jeff@ellin.net
       aws_region: us-east-1
       zone_id: ZM4W2IR7IZJ3M
-      external_dns_txt_id: dnstest
-      hello_host: hello-dnstest.ellin.net
+      external_dns_txt_id: testupgrade3
+      hello_host: hello-testupgrade3.ellin.net
   resourcesTemplate: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization

@@ -16,3 +16,10 @@ configMapGenerator:
     disableNameSuffixHash: true
     annotations:
       kustomize.toolkit.fluxcd.io/substitute: disabled
+- name: upgrade-cluster
+  namespace: talos-automation
+  files: [upgrade-cluster.sh]
+  options:
+    disableNameSuffixHash: true
+    annotations:
+      kustomize.toolkit.fluxcd.io/substitute: disabled
