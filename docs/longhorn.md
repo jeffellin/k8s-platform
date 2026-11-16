@@ -109,7 +109,7 @@ On `demo2` (1 worker, throwaway): first variant A (default path `/var/mnt/longho
 - Longhorn important notes: https://longhorn.io/docs/1.13.0/important-notes/
 - Longhorn Helm chart: https://charts.longhorn.io (1.13.0, `kubeVersion >=1.34.0-0`)
 
-## Trial results (2026-11-12, `demo2`, variant A)
+## Trial results (2026-11-12, `demo2`, variant A, now a fallback)
 
 Enabled with PR #39 (`longhorn_replicas: "1"`, default data path). Timeline and findings:
 
@@ -118,4 +118,17 @@ Enabled with PR #39 (`longhorn_replicas: "1"`, default data path). Timeline and 
 - A 1 GiB PVC and a pod: PVC Bound in ~25 s after the instance manager ran, attach succeeded, the pod wrote `hello-longhorn` and read it back; Longhorn volume `attached`, `healthy`, 1 replica. After deleting the pod, a new pod on the same PVC read the file back.
 - Only `longhorn-system` is privileged; the test namespace needed no exception (the test pods only drew Pod Security warnings about their missing securityContext).
 
-Not yet tested: variant B (50 GB disk), 2 workers with 2 replicas, F1 scale-down and drain with Longhorn volumes, node reboot, backups.
+Not yet tested on demo2 (see the demo3 results below for variant B and scale-down): node reboot, backups.
+
+## Trial results (2026-11-12, `demo3`, variant B, 2 workers, 2 replicas)
+
+`demo3`: control plane plus 2 workers on `pve2`, `storage: truenas-fast-storage`, `longhorn_replicas: "2"`, built after `hack/talos-gen-config.sh` named the data user volume `longhorn` (PR #44).
+
+- **Variant B works with no kubelet bind mount and no machine-config change.** Longhorn's disk on each worker is `/var/mnt/longhorn`, xfs, 49 GiB (the 50 GB data disk, not the 64 GB system partition that variant A used), Ready.
+- A 1 GiB PVC and a pod: PVC Bound, attach succeeded in about 20 s, the pod wrote `hello-longhorn` and read it back. The volume was `attached`, `healthy`, with one replica on each worker. Persistence across a pod recreation was not repeated on demo3 (it was shown on demo2).
+- **Scale-down 2 workers to 1 with a 2-replica volume**, following the runbook section "Scaling down below a Longhorn volume's replica count" (lower the volume to 1 replica, evict the node in Longhorn, then scale down in Git): the F1 Job drained and reset `demo3-w-2`, deleted the Node and purged the VM; the XR returned to `Ready`; the volume stayed `attached` and `healthy` on the remaining worker and the pod kept running. **The `nodes.longhorn.io` object for the removed worker disappeared by itself** (on `demo2`, where the node was removed without eviction, it stayed behind and the volume stayed degraded). Before the eviction, `hack/scale-down-check.sh` had warned that the instance-manager PodDisruptionBudgets allowed 0 disruptions (a drain would block, exit 4).
+- **HelmReleases stalled on a fresh cluster.** `cert-manager`, `metallb` and `external-dns` hit `RetriesExceeded: Failed to install after 1 attempt` because pods became Ready after the install timeout (slow image pulls, backlog F20), and `longhorn` went into uninstall remediation that the uninstall guard (`deletingConfirmationFlag`) refused. `external-dns` crash-looped on the missing Contour CRD (`httpproxies`) because it has no `dependsOn` for contour. Annotating the HelmReleases with `reconcile.fluxcd.io/resetAt` recovered them. Not a Longhorn defect; it is the F20 install timeout and retries.
+
+Variant B is now the default for new clusters. Variant A stays as a fallback and is still what `demo2` runs. Both use the same path, so check after a build that `/var/mnt/longhorn` is its own mount (`talosctl get volumestatus u-longhorn`, or the Longhorn disk size of about 49 GiB); if the user volume fails to mount, Longhorn silently uses a directory on `/var`.
+
+Still not tested: node reboot, backups, scale-up rebuilding a replica on a new worker.
