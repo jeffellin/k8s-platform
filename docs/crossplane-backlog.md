@@ -147,7 +147,7 @@ As R1, I want the existing `bootstrap.sh` flow to work on this new cluster.
 - Done when: Flux syncs; core apps and the hello app Ready on `lab-manager`; the LoadBalancer IP answers.
 - Demo: `kubectl get kustomization -A` on `lab-manager` and `curl https://hello-manager.ellin.net`. (This is also the regression test that R1 still works.)
 
-**A5. (Optional) Fix `vmbr1` netmask on `pve`** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (S) [manual] **STILL OPEN, UNCHECKED (2026-11-16): cannot be seen from here; check with `ip -br addr show vmbr1` on `pve`. Nothing built so far has needed it.**
+**A5. (Optional) Fix `vmbr1` netmask on `pve`** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (issue #78) (S) [manual] **STILL OPEN, UNCHECKED (2026-11-16): cannot be seen from here; check with `ip -br addr show vmbr1` on `pve`. Nothing built so far has needed it.**
 VLAN 10 is `/22`; `pve` has `vmbr1` at `192.168.8.2/24`. Change to `/22` in `/etc/network/interfaces`, `ifreload -a` (from the 192.168.1.52 session). Demo: `ip -br addr show vmbr1` shows `/22`; ping from `pve` to a VLAN 10 VM works.
 
 **B6. Teardown script, tested on a throwaway VM** (S) **DONE, SUPERSEDED (2026-11-16): `hack/talos-destroy.sh` was never written; teardown is `apps/crossplane-api/destroy-cluster.sh` run as a Job by the two-step teardown (F3, F12, F13), tested live on several clusters (latest: `dnstest`, VM stopped and purged, secrets removed, DNS cleaned)**
@@ -164,7 +164,7 @@ As the Jobs, I need one image with the tools.
 - Done when: `docker run ellinj/talos-automation:dev talosctl version --client` works and `bootstrap.sh --help`-style dry run works.
 - Demo: image size and tool versions.
 
-**C2. Publish with a pipeline** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (M) [manual: Docker Hub token] **WORKFLOW ON `main` BUT FAILING (checked 2026-11-16): `.github/workflows/talos-automation-image.yml` is merged, and the last 5 runs, on every merge touching its paths, all failed after about 20 s; `gh secret list` shows no repository secrets, so `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are probably missing (the failing step was not read). The image in use, `ellinj/talos-automation:dev`, is built and pushed by hand. Same action as F15: add the two secrets, then re-run the workflow.**
+**C2. Publish with a pipeline** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (issue #77) (M) [manual: Docker Hub token] **WORKFLOW ON `main` BUT FAILING (checked 2026-11-16): `.github/workflows/talos-automation-image.yml` is merged, and the last 5 runs, on every merge touching its paths, all failed after about 20 s; `gh secret list` shows no repository secrets, so `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are probably missing (the failing step was not read). The image in use, `ellinj/talos-automation:dev`, is built and pushed by hand. Same action as F15: add the two secrets, then re-run the workflow.**
 - Do: GitHub Actions workflow building on tag/main and pushing `ellinj/talos-automation:<sha>` and `:v1.14.5`-style tags.
 - Done when: a push produces an image visible on Docker Hub.
 - Demo: Docker Hub tag list. (Resolves the "build method" open item.)
@@ -227,7 +227,7 @@ As the Jobs, I need one image with the tools.
 
 ## Epic F: Day-2 and polish
 
-**Status at a glance** (Done = built and verified; Not done = open, all post-MVP; Shelved or Closed = decided not to do now). The full text of each item is under *Details* below.
+**Status at a glance** (Done = built and verified; Not done = open, all post-MVP; Shelved or Closed = decided not to do now). The full text of each item is under *Details* below; every open item has a GitHub issue (label `post-mvp`), linked in the Notes column.
 
 | ID | Item | Size | Status | Notes |
 |---|---|---|---|---|
@@ -239,27 +239,27 @@ As the Jobs, I need one image with the tools.
 | F6 | Backups of `lab-manager` | S | Closed | 2026-11-12 |
 | F7 | Retire `talos-test` as manager | S | Closed | 2026-11-12 |
 | F8 | Drive MetalLB `ignoreExcludeLB` from the XR | M | Shelved | 2026-11-12; not needed for the MVP |
-| F9 | One-step delete via a finalizer controller | M | Not done | post-MVP |
+| F9 | One-step delete via a finalizer controller | M | Not done | post-MVP Issue #64. |
 | F10 | Shrink rendered ResourceSets | S | Shelved | 2026-11-12; deprioritized |
-| F11 | Rebuild and automate the `lab-manager` build | M | Not done | post-MVP |
+| F11 | Rebuild and automate the `lab-manager` build | M | Not done | post-MVP Issue #65. |
 | F12 | `new-talos-cluster.sh --teardown` | S | Done | 2026-11-13; PR #49, verified live |
 | F13 | DNS cleanup on teardown | S-M | Done | 2026-11-15; verified live on `dnstest` (PRs #51, #52, #54) |
-| F14 | Verify the untested teardown paths | S | Not done | post-MVP |
-| F15 | Housekeeping (Docker Hub secrets, etc.) | S | Not done | post-MVP; the tracked binary is handled by PR #63 |
-| F16 | PR checks | S-M | Not done | post-MVP; see F24 |
+| F14 | Verify the untested teardown paths | S | Not done | post-MVP Issue #66. |
+| F15 | Housekeeping (Docker Hub secrets, etc.) | S | Not done | post-MVP; the tracked binary is handled by PR #63 Issue #67. |
+| F16 | PR checks | S-M | Not done | post-MVP; see F24 Issue #68. |
 | F17 | Rename the GitHub repo | S | Done | 2026-11-09; PR #20 |
 | F18 | Render automatically from `clusters.yaml` | S-M | Shelved | 2026-11-12; not needed for the MVP |
-| F19 | Placement: per-role storage, moving VMs | M-L | Not done | post-MVP |
+| F19 | Placement: per-role storage, moving VMs | M-L | Not done | post-MVP Issue #69. |
 | F20 | Resilient bring-up on slow storage/links | S-M | Done | 2026-11-12; PRs #45-#48 |
 | F21 | Update the stored install image after an upgrade | S | Shelved | 2026-11-15; minor |
-| F22 | Retire local-path-provisioner, Longhorn | S-M | Partly done | local-path retired (PR #37), Longhorn trial passed (PRs #38, #39); follow-ups open, post-MVP |
+| F22 | Retire local-path-provisioner, Longhorn | S-M | Partly done | local-path retired (PR #37), Longhorn trial passed (PRs #38, #39); follow-ups open, post-MVP Issue #76. |
 | F23 | Scale-down follow-ups (PVC cleanup, saved log) | S-M | Done | PR #34; live-verified on `demo2` |
-| F24 | Validation story (umbrella over F16) | M-L | Not done | post-MVP |
-| F25 | Kubernetes version upgrade | M | Not done | post-MVP |
-| F26 | etcd snapshot before an upgrade (S3) | S-M | Not done | post-MVP; low priority |
-| F27 | Talos template runbook; default version for new clusters | S | Not done | post-MVP |
-| F28 | Live test of the upgrade failure paths | S | Not done | post-MVP |
-| F29 | XRs outside `default`; Jobs in the cluster's namespace | M-L | Not done | post-MVP; needs a design session |
+| F24 | Validation story (umbrella over F16) | M-L | Not done | post-MVP Issue #70. |
+| F25 | Kubernetes version upgrade | M | Not done | post-MVP Issue #71. |
+| F26 | etcd snapshot before an upgrade (S3) | S-M | Not done | post-MVP; low priority Issue #72. |
+| F27 | Talos template runbook; default version for new clusters | S | Not done | post-MVP Issue #73. |
+| F28 | Live test of the upgrade failure paths | S | Not done | post-MVP Issue #74. |
+| F29 | XRs outside `default`; Jobs in the cluster's namespace | M-L | Not done | post-MVP; needs a design session Issue #75. |
 
 9 done, 1 partly done, 12 not done, 5 shelved, 2 closed.
 
