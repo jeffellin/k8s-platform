@@ -239,27 +239,27 @@ As the Jobs, I need one image with the tools.
 | F6 | Backups of `lab-manager` | S | Closed | 2026-11-12 |
 | F7 | Retire `talos-test` as manager | S | Closed | 2026-11-12 |
 | F8 | Drive MetalLB `ignoreExcludeLB` from the XR | M | Shelved | 2026-11-12; not needed for the MVP |
-| F9 | One-step delete via a finalizer controller | M | Not done | post-MVP Issue #64. |
+| F9 | One-step delete via a finalizer controller | M | Not done | post-MVP. Issue #64. |
 | F10 | Shrink rendered ResourceSets | S | Shelved | 2026-11-12; deprioritized |
-| F11 | Rebuild and automate the `lab-manager` build | M | Not done | post-MVP Issue #65. |
+| F11 | Rebuild and automate the `lab-manager` build | M | Not done | post-MVP. Issue #65. |
 | F12 | `new-talos-cluster.sh --teardown` | S | Done | 2026-11-13; PR #49, verified live |
 | F13 | DNS cleanup on teardown | S-M | Done | 2026-11-15; verified live on `dnstest` (PRs #51, #52, #54) |
-| F14 | Verify the untested teardown paths | S | Not done | post-MVP Issue #66. |
-| F15 | Housekeeping (Docker Hub secrets, etc.) | S | Not done | post-MVP; the tracked binary is handled by PR #63 Issue #67. |
-| F16 | PR checks | S-M | Not done | post-MVP; see F24 Issue #68. |
+| F14 | Verify the untested teardown paths | S | Not done | post-MVP. Issue #66. |
+| F15 | Housekeeping (Docker Hub secrets, etc.) | S | Not done | post-MVP; the tracked binary is handled by PR #63. Issue #67. |
+| F16 | PR checks | S-M | Not done | post-MVP; see F24. Issue #68. |
 | F17 | Rename the GitHub repo | S | Done | 2026-11-09; PR #20 |
 | F18 | Render automatically from `clusters.yaml` | S-M | Shelved | 2026-11-12; not needed for the MVP |
-| F19 | Placement: per-role storage, moving VMs | M-L | Not done | post-MVP Issue #69. |
+| F19 | Placement: per-role storage, moving VMs | M-L | Not done | post-MVP. Issue #69. |
 | F20 | Resilient bring-up on slow storage/links | S-M | Done | 2026-11-12; PRs #45-#48 |
 | F21 | Update the stored install image after an upgrade | S | Shelved | 2026-11-15; minor |
-| F22 | Retire local-path-provisioner, Longhorn | S-M | Partly done | local-path retired (PR #37), Longhorn trial passed (PRs #38, #39); follow-ups open, post-MVP Issue #76. |
+| F22 | Retire local-path-provisioner, Longhorn | S-M | Partly done | local-path retired (PR #37), Longhorn trial passed (PRs #38, #39); follow-ups open, post-MVP. Issue #76. |
 | F23 | Scale-down follow-ups (PVC cleanup, saved log) | S-M | Done | PR #34; live-verified on `demo2` |
-| F24 | Validation story (umbrella over F16) | M-L | Not done | post-MVP Issue #70. |
-| F25 | Kubernetes version upgrade | M | Not done | post-MVP Issue #71. |
-| F26 | etcd snapshot before an upgrade (S3) | S-M | Not done | post-MVP; low priority Issue #72. |
-| F27 | Talos template runbook; default version for new clusters | S | Not done | post-MVP Issue #73. |
-| F28 | Live test of the upgrade failure paths | S | Not done | post-MVP Issue #74. |
-| F29 | XRs outside `default`; Jobs in the cluster's namespace | M-L | Not done | post-MVP; needs a design session Issue #75. |
+| F24 | Validation story (umbrella over F16) | M-L | Not done | post-MVP. Issue #70. |
+| F25 | Kubernetes version upgrade | M | Not done | post-MVP. Issue #71. |
+| F26 | etcd snapshot before an upgrade (S3) | S-M | Not done | post-MVP; low priority. Issue #72. |
+| F27 | Talos template runbook; default version for new clusters | S | Not done | post-MVP. Issue #73. |
+| F28 | Live test of the upgrade failure paths | S | Not done | post-MVP. Issue #74. |
+| F29 | XRs outside `default`; Jobs in the cluster's namespace | M-L | Not done | post-MVP; needs a design session. Issue #75. |
 
 9 done, 1 partly done, 12 not done, 5 shelved, 2 closed.
 
