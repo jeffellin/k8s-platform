@@ -2,7 +2,11 @@
 # wait for PHASE=TornDown, delete the object, then hack/new-talos-cluster.sh --remove demo1.
 apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
-metadata: {name: demo1, namespace: default}
+metadata:
+  name: demo1
+  namespace: default
+  annotations:
+    platform.ellin.net/teardown: "true"
 spec:
   network:
     controlPlaneIP: 192.168.10.57
