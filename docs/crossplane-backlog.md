@@ -147,7 +147,7 @@ As R1, I want the existing `bootstrap.sh` flow to work on this new cluster.
 - Done when: Flux syncs; core apps and the hello app Ready on `lab-manager`; the LoadBalancer IP answers.
 - Demo: `kubectl get kustomization -A` on `lab-manager` and `curl https://hello-manager.ellin.net`. (This is also the regression test that R1 still works.)
 
-**A5. (Optional) Fix `vmbr1` netmask on `pve`** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (S) [manual] **STILL OPEN, UNCHECKED (2026-11-16): cannot be seen from here; check with `ip -br addr show vmbr1` on `pve`. Nothing built so far has needed it.**
+**A5. (Optional) Fix `vmbr1` netmask on `pve`** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (issue #78) (S) [manual] **STILL OPEN, UNCHECKED (2026-11-16): cannot be seen from here; check with `ip -br addr show vmbr1` on `pve`. Nothing built so far has needed it.**
 VLAN 10 is `/22`; `pve` has `vmbr1` at `192.168.8.2/24`. Change to `/22` in `/etc/network/interfaces`, `ifreload -a` (from the 192.168.1.52 session). Demo: `ip -br addr show vmbr1` shows `/22`; ping from `pve` to a VLAN 10 VM works.
 
 **B6. Teardown script, tested on a throwaway VM** (S) **DONE, SUPERSEDED (2026-11-16): `hack/talos-destroy.sh` was never written; teardown is `apps/crossplane-api/destroy-cluster.sh` run as a Job by the two-step teardown (F3, F12, F13), tested live on several clusters (latest: `dnstest`, VM stopped and purged, secrets removed, DNS cleaned)**
@@ -164,7 +164,7 @@ As the Jobs, I need one image with the tools.
 - Done when: `docker run ellinj/talos-automation:dev talosctl version --client` works and `bootstrap.sh --help`-style dry run works.
 - Demo: image size and tool versions.
 
-**C2. Publish with a pipeline** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (M) [manual: Docker Hub token] **WORKFLOW ON `main` BUT FAILING (checked 2026-11-16): `.github/workflows/talos-automation-image.yml` is merged, and the last 5 runs, on every merge touching its paths, all failed after about 20 s; `gh secret list` shows no repository secrets, so `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are probably missing (the failing step was not read). The image in use, `ellinj/talos-automation:dev`, is built and pushed by hand. Same action as F15: add the two secrets, then re-run the workflow.**
+**C2. Publish with a pipeline** **POST-MVP (Jeff, 2026-11-16: MVP closed; open, not started)** (issue #77) (M) [manual: Docker Hub token] **WORKFLOW ON `main` BUT FAILING (checked 2026-11-16): `.github/workflows/talos-automation-image.yml` is merged, and the last 5 runs, on every merge touching its paths, all failed after about 20 s; `gh secret list` shows no repository secrets, so `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are probably missing (the failing step was not read). The image in use, `ellinj/talos-automation:dev`, is built and pushed by hand. Same action as F15: add the two secrets, then re-run the workflow.**
 - Do: GitHub Actions workflow building on tag/main and pushing `ellinj/talos-automation:<sha>` and `:v1.14.5`-style tags.
 - Done when: a push produces an image visible on Docker Hub.
 - Demo: Docker Hub tag list. (Resolves the "build method" open item.)
@@ -226,6 +226,44 @@ As the Jobs, I need one image with the tools.
 ---
 
 ## Epic F: Day-2 and polish
+
+**Status at a glance** (Done = built and verified; Not done = open, all post-MVP; Shelved or Closed = decided not to do now). The full text of each item is under *Details* below; every open item has a GitHub issue (label `post-mvp`), linked in the Notes column.
+
+| ID | Item | Size | Status | Notes |
+|---|---|---|---|---|
+| F1 | Scale workers down (N to M, M > 0) | M | Done | 2026-11-12; drain, data-loss guard (PRs #27-#33, #41, #42) |
+| F2 | Talos upgrades (rolling, in place) | M | Done | 2026-11-16; proven on 1 node, 1+3 nodes and the nothing-to-do case |
+| F3 | Deletion protection and two-step teardown | M | Done | PRs #11, #12 |
+| F4 | `hack/new-talos-cluster.sh` scaffold | S | Done | PRs #13, #14 |
+| F5 | Collapse `clusters.yaml` into the XR | M | Shelved | 2026-11-12; not needed for the MVP |
+| F6 | Backups of `lab-manager` | S | Closed | 2026-11-12 |
+| F7 | Retire `talos-test` as manager | S | Closed | 2026-11-12 |
+| F8 | Drive MetalLB `ignoreExcludeLB` from the XR | M | Shelved | 2026-11-12; not needed for the MVP |
+| F9 | One-step delete via a finalizer controller | M | Not done | post-MVP. Issue #64. |
+| F10 | Shrink rendered ResourceSets | S | Shelved | 2026-11-12; deprioritized |
+| F11 | Rebuild and automate the `lab-manager` build | M | Not done | post-MVP. Issue #65. |
+| F12 | `new-talos-cluster.sh --teardown` | S | Done | 2026-11-13; PR #49, verified live |
+| F13 | DNS cleanup on teardown | S-M | Done | 2026-11-15; verified live on `dnstest` (PRs #51, #52, #54) |
+| F14 | Verify the untested teardown paths | S | Not done | post-MVP. Issue #66. |
+| F15 | Housekeeping (Docker Hub secrets, etc.) | S | Not done | post-MVP; the tracked binary is handled by PR #63. Issue #67. |
+| F16 | PR checks | S-M | Not done | post-MVP; see F24. Issue #68. |
+| F17 | Rename the GitHub repo | S | Done | 2026-11-09; PR #20 |
+| F18 | Render automatically from `clusters.yaml` | S-M | Shelved | 2026-11-12; not needed for the MVP |
+| F19 | Placement: per-role storage, moving VMs | M-L | Not done | post-MVP. Issue #69. |
+| F20 | Resilient bring-up on slow storage/links | S-M | Done | 2026-11-12; PRs #45-#48 |
+| F21 | Update the stored install image after an upgrade | S | Shelved | 2026-11-15; minor |
+| F22 | Retire local-path-provisioner, Longhorn | S-M | Partly done | local-path retired (PR #37), Longhorn trial passed (PRs #38, #39); follow-ups open, post-MVP. Issue #76. |
+| F23 | Scale-down follow-ups (PVC cleanup, saved log) | S-M | Done | PR #34; live-verified on `demo2` |
+| F24 | Validation story (umbrella over F16) | M-L | Not done | post-MVP. Issue #70. |
+| F25 | Kubernetes version upgrade | M | Not done | post-MVP. Issue #71. |
+| F26 | etcd snapshot before an upgrade (S3) | S-M | Not done | post-MVP; low priority. Issue #72. |
+| F27 | Talos template runbook; default version for new clusters | S | Not done | post-MVP. Issue #73. |
+| F28 | Live test of the upgrade failure paths | S | Not done | post-MVP. Issue #74. |
+| F29 | XRs outside `default`; Jobs in the cluster's namespace | M-L | Not done | post-MVP; needs a design session. Issue #75. |
+
+9 done, 1 partly done, 12 not done, 5 shelved, 2 closed.
+
+### Details
 
 **F1. Scale-down N -> M (M > 0)** (M) **DONE 2026-11-12 (marked by Jeff; scale-down script `apps/crossplane-api/scale-down-workers.sh` and live scale-downs on demo2 merged in PRs #32-#36, #41, #42)**: reducing workers (e.g. 4 -> 3) must never just delete a VM. Per removed worker, highest index first: cordon, **drain** (`--ignore-daemonsets --delete-emptydir-data`, respect PodDisruptionBudgets, bounded timeout), `talosctl reset --graceful` (leaves etcd/cluster cleanly), `kubectl delete node`, then power off and delete the VM. Order matters: the composition must stop dropping the VM resource as soon as `workerIPs` shrinks; it should hold the VM until the drain Job succeeds (Job per removed node, gated and idempotent like the other layers, with a `$rev`-style name). Open points: local-path volumes pin pods to their node (a drain can't reschedule them: warn/refuse unless an annotation allows data loss), PDBs that block the drain (fail the XR with a clear condition instead of forcing), and the IP/VM ID being freed (allocation-doc reminder). New condition e.g. `ScalingDown`. Demo: 4 -> 3 workers on a test cluster with workloads intact, node drained before the VM disappears; a blocked drain leaves the node cordoned and reports why.
 **F2. Upgrades** (M) **DONE 2026-11-16 (Jeff; proven live; the follow-ups are F25-F28 and F21)**: manual `talosctl upgrade` proven on demo1 (v1.14.5 -> v1.14.6, ~5 min, pods back after ~9; `install.image` in the stored machine config stays old and must be patched; `talosctl upgrade --wait` returns before workloads recover, so the health gate must wait for etcd, API and pods). Template 9101 (v1.14.6) built and registered next to 9100. Step 1 (this PR): VM and Talos Jobs use `status.createdTalosVersion` so `spec.talosVersion` can change without touching immutable Jobs; offline composition test in `hack/composition-test/`. Step 1 merged (PRs #56, #57). **Design for the rest (2026-11-15):** the composition renders an `upgrade-<name>-<targetVersion>` Job (provider-kubernetes Object, script in a Flux-managed ConfigMap `upgrade-cluster`, talosconfig and kubeconfig Secrets mounted, like scale-down) when `spec.talosVersion` differs from the new `status.talosVersion` (starts as `createdTalosVersion`, set to the target when the Job is observed succeeded); XR phase `Upgrading`, failure condition `UpgradeFailed`. Script: preflight (no downgrade, at most one minor, installer image exists for the schematic, nodes reachable, etcd healthy, real versions read with `talosctl`) -> etcd snapshot -> control plane then workers one at a time (skip nodes already at the target; `talosctl upgrade --image factory.talos.dev/nocloud-installer/<schematic>:<target> --wait`, then a bounded health gate: node Ready, etcd healthy, API answering, pods settled, because `--wait` returns before workloads recover) -> done. Patching the stored install image after the upgrade is NOT in the first version: see F21 (shelved). Single-node control planes lose the Kubernetes API during the reboot (**accepted by Jeff, 2026-11-15**; to be documented in the runbook). Kubernetes upgrade (`upgrade-k8s`) is a separate later Job; the template runbook is separate too. **Open item: where the etcd snapshot goes** (13.6 MB on demo1, too big for a Secret, and a Job pod's disk is lost): S3 is the likely choice, skipped for now, so the first version of the script takes no snapshot (or only writes it to the pod and says so). **Built and proven live 2026-11-16:** `apps/crossplane-api/upgrade-cluster.sh` + composition upgrade layer (`status.talosVersion`, phase `Upgrading`, condition `Upgrading`/`UpgradeFailed`) + runbook section "Upgrade Talos" (pushed straight to `main` as `2e1e168`, no PR). Live test on `testupgrade` (1 control plane, 0 workers, created on v1.14.5): bumping `talosVersion` to v1.14.6 in Git started `upgrade-testupgrade-v1-14-6`; phase `Upgrading` for about 3 minutes (00:26:40 to 00:29:29), then `Ready` with `status.talosVersion: v1.14.6`, `createdTalosVersion` still v1.14.5, node reports v1.14.6, Job and Object removed, log kept in `cm/upgrade-testupgrade-last`. Offline tests: `hack/composition-test/` (composition render harness, script test with mocked tools). **Also proven live:** multi-node `testupgrade3` (1 control plane + 3 workers, created on v1.14.5, bumped to v1.14.6): control plane first, then `.65`, `.66`, `.67` one at a time, each waiting for its health gate, about 7 minutes in total (00:46:06 to 00:53:09), XR back to `Ready`, log `exit=0` without warnings; and the nothing-to-do case on demo1 (its node already ran v1.14.6, so the Job logged "all nodes already run v1.14.6: nothing to do", never called `talosctl upgrade`, and set `status.talosVersion`). **Left out on purpose, now separate items:** Kubernetes upgrade (F25), etcd snapshot before the upgrade (F26), template runbook and the new-cluster default version (F27), live test of the failure paths (F28); the stored install image is F21. Original: `talosVersion` bump triggers `talosctl upgrade` node by node (etcd snapshot first). Demo: v1.14.5 -> next patch on a test cluster.
