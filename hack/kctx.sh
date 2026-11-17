@@ -8,9 +8,13 @@
 #   kctx -            switch back to the previous cluster
 #   kctx -c           show the current cluster
 #   kctx -l           list clusters (local kubeconfigs, marking the current one)
-#   kctx -u           unset KUBECONFIG (back to ~/.kube/config)
+#   kctx -u           unset KUBECONFIG and TALOSCONFIG (back to ~/.kube/config)
 #
-# Only sets $KUBECONFIG for the current shell; ~/.kube/config is never modified. Clusters = directories in
+# Also sets $TALOSCONFIG to _talos/<name>/talosconfig when it exists (so `talosctl health` etc. target the selected
+# cluster); otherwise TALOSCONFIG is unset so talosctl never talks to the previous cluster. A missing talosconfig is
+# fetched from the manager on a best-effort basis.
+#
+# Only sets $KUBECONFIG/$TALOSCONFIG for the current shell; ~/.kube/config is never modified. Clusters = directories in
 # $KCTX_DIR (default: <repo>/_talos) that contain a `kubeconfig`. Missing ones are fetched with hack/get-kubeconfig.sh.
 
 _KCTX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,6 +35,20 @@ _kctx_current() {
   esac
 }
 
+# Generated talosconfigs have no endpoints/nodes, so talosctl has nothing to talk to. When both are empty, fill them in
+# (in the local, git-ignored file) with the host of the cluster's API server from its kubeconfig. Existing values are kept.
+_kctx_talos_defaults() {
+  command -v talosctl >/dev/null 2>&1 || return 0
+  local t="$1" k="$2" info host
+  info="$(talosctl --talosconfig "$t" config info 2>/dev/null)" || return 0
+  case "$info" in *"Endpoints:"*"not defined"*) ;; *) return 0 ;; esac
+  host="$(sed -n 's#^[[:space:]]*server:[[:space:]]*https\{0,1\}://\([^:/]*\).*#\1#p' "$k" | head -n1)"
+  [ -n "$host" ] || return 0
+  talosctl --talosconfig "$t" config endpoint "$host" >/dev/null 2>&1 && \
+    talosctl --talosconfig "$t" config node "$host" >/dev/null 2>&1 && \
+    echo "kctx: set talos endpoint/node to $host"
+}
+
 _kctx_use() {
   local name="$1" f="$KCTX_DIR/$1/kubeconfig"
   if [[ ! "$name" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then echo "kctx: bad cluster name '$name'" >&2; return 2; fi
@@ -39,10 +57,23 @@ _kctx_use() {
     # pin the manager explicitly: get-kubeconfig.sh would otherwise fall back to $KUBECONFIG, i.e. the cluster picked last
     "$_KCTX_ROOT/hack/get-kubeconfig.sh" "$name" --manager-kubeconfig "${MANAGER_KUBECONFIG:-$KCTX_DIR/lab-manager/kubeconfig}" || { echo "kctx: could not fetch '$name'" >&2; return 1; }
   fi
+  local t="$KCTX_DIR/$name/talosconfig"
+  if [ ! -f "$t" ] && [ "$name" != lab-manager ]; then
+    # best effort: not every cluster is Talos-managed, so a failure here is not an error
+    "$_KCTX_ROOT/hack/get-kubeconfig.sh" "$name" --talosconfig --manager-kubeconfig "${MANAGER_KUBECONFIG:-$KCTX_DIR/lab-manager/kubeconfig}" >/dev/null 2>&1 || true
+  fi
   local cur; cur="$(_kctx_current 2>/dev/null || true)"
   [ -n "$cur" ] && [ "$cur" != "$name" ] && export KCTX_PREV="$cur"
   export KUBECONFIG="$f"
   echo "kctx: using $name ($f)"
+  if [ -f "$t" ]; then
+    _kctx_talos_defaults "$t" "$f"
+    export TALOSCONFIG="$t"
+    echo "kctx: TALOSCONFIG=$t"
+  else
+    unset TALOSCONFIG
+    echo "kctx: no talosconfig for '$name'; TALOSCONFIG unset" >&2
+  fi
 }
 
 _kctx_pick() {
@@ -62,10 +93,10 @@ _kctx_pick() {
 kctx() {
   case "${1:-}" in
     "")        _kctx_pick ;;
-    -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+    -h|--help) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
     -l)        local c; c="$(_kctx_current 2>/dev/null || true)"; _kctx_list | while read -r n; do [ "$n" = "$c" ] && echo "* $n" || echo "  $n"; done ;;
     -c)        _kctx_current || { echo "kctx: KUBECONFIG is not set (using ~/.kube/config)" >&2; return 1; } ;;
-    -u)        unset KUBECONFIG; echo "kctx: KUBECONFIG unset" ;;
+    -u)        unset KUBECONFIG TALOSCONFIG; echo "kctx: KUBECONFIG and TALOSCONFIG unset" ;;
     -)         [ -n "${KCTX_PREV:-}" ] && _kctx_use "$KCTX_PREV" || { echo "kctx: no previous cluster" >&2; return 1; } ;;
     -*)        echo "kctx: unknown option $1 (see kctx --help)" >&2; return 2 ;;
     *)         [ $# -eq 1 ] || { echo "kctx: one cluster name only" >&2; return 2; }; _kctx_use "$1" ;;
