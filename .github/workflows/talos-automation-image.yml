@@ -8,11 +8,7 @@ on:
     paths:
       - image/Dockerfile
       - .dockerignore
-      - hack/clone-talos-vm.sh
-      - hack/talos-gen-config.sh
-      - hack/talos-apply-bootstrap.sh
-      - hack/talos-apply-worker.sh
-      - hack/cluster-up.sh
+      - image/scripts/**
       - .github/workflows/talos-automation-image.yml
     tags: ["image-v*"]
   workflow_dispatch:

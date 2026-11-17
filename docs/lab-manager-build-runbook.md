@@ -20,7 +20,7 @@ clusters. This runbook builds one **from nothing** (Part A: the Talos node) and 
   (`op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -`).
 - 1Password: `op://HomeLab/r53-aws` (Route53 keys: `access key id`, `secret access key`) exists. The item named **`Proxmox API Token` is NOT the `talos-provisioner` token**: it was created 2026-08-24, before that token (2026-11-08), and does not mention it. The `talos-provisioner` secret is, as far as I can verify, only in the `proxmox-token` Secret on the running manager.
 - Docker Hub image `ellinj/talos-automation:dev` pushed (the Jobs use it); the Docker Hub workflow only runs from `main` with repo secrets set (backlog C2).
-- Git layout: since the plan branch was merged to `main` (2026-11-09) all scripts (`hack/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`, `render.py`, `new-sops-cluster.sh`, `seed-secrets.sh`) and `bootstrap/` are on `main`.
+- Git layout: since the plan branch was merged to `main` (2026-11-09) all scripts (`image/scripts/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`, `hack/render.py`, `hack/new-sops-cluster.sh`, `hack/seed-secrets.sh`) and `bootstrap/` are on `main`.
   Run everything from a checkout of `main` (or of the plan branch if it is up to date with `main`); `~/homelab/k8s-platform` holds the git-ignored `_talos/` directory.
 
 ## Before you delete the old VM
@@ -110,10 +110,10 @@ Then:
 
 ```bash
 export PVE_TOKEN_SECRET=...                                           # see "Before you delete the old VM": NOT in the 1Password item named Proxmox API Token
-hack/clone-talos-vm.sh --name lab-manager --ip 192.168.10.56          # clones VM 10056 from template 9100, starts it; re-run = "exists, skipping"
+image/scripts/clone-talos-vm.sh --name lab-manager --ip 192.168.10.56          # clones VM 10056 from template 9100, starts it; re-run = "exists, skipping"
 nc -zv 192.168.10.56 50000                                            # Talos maintenance API answers
-hack/talos-gen-config.sh lab-manager 192.168.10.56 --workers 0 --out $OUT   # 0 workers = control plane schedulable; keeps an existing $OUT/secrets.yaml silently
-hack/talos-apply-bootstrap.sh lab-manager 192.168.10.56 --dir $OUT        # apply config, bootstrap etcd once, wait healthy, write kubeconfig (about 5-10 min)
+image/scripts/talos-gen-config.sh lab-manager 192.168.10.56 --workers 0 --out $OUT   # 0 workers = control plane schedulable; keeps an existing $OUT/secrets.yaml silently
+image/scripts/talos-apply-bootstrap.sh lab-manager 192.168.10.56 --dir $OUT        # apply config, bootstrap etcd once, wait healthy, write kubeconfig (about 5-10 min)
 export KUBECONFIG=$OUT/kubeconfig
 kubectl get nodes -o wide                                             # Ready, Talos v1.14.5, k8s v1.37.x, no taints
 ```

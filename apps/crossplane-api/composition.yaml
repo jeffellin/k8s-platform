@@ -321,7 +321,7 @@ spec:
                           cluster-up.sh
                           # E5: a cluster built with 0 workers has no control-plane taint. Once workers exist, re-apply the
                           # regenerated controlplane.yaml (it keeps the taint) live, no reboot. No-op when already tainted.
-                          # TODO: move into hack/talos-apply-bootstrap.sh on the next image rebuild.
+                          # TODO: move into image/scripts/talos-apply-bootstrap.sh on the next image rebuild.
                           if [ -n "$WORKER_IPS" ]; then
                             D="/work/$CLUSTER_NAME"
                             TC="talosctl --talosconfig $D/talosconfig -e $CP_IP -n $CP_IP"

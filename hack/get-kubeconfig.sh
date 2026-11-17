@@ -6,7 +6,7 @@
 # Reads Secret <cluster>-kubeconfig (and <cluster>-talosconfig) in namespace talos-automation on lab-manager.
 # Default output: _talos/<cluster>/kubeconfig (git-ignored), mode 0600, replaced if it exists.
 # Manager kubeconfig: --manager-kubeconfig, else $MANAGER_KUBECONFIG, else $KUBECONFIG, else ~/homelab/k8s-platform/_talos/lab-manager/kubeconfig.
-# lab-manager itself has no Secret: its kubeconfig is _talos/lab-manager/kubeconfig (written by hack/talos-apply-bootstrap.sh).
+# lab-manager itself has no Secret: its kubeconfig is _talos/lab-manager/kubeconfig (written by image/scripts/talos-apply-bootstrap.sh).
 set -euo pipefail
 
 usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }

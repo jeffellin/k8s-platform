@@ -2,7 +2,7 @@
 # Clone a Talos node VM from the template via the Proxmox API (idempotent).
 #
 #   export PVE_TOKEN_SECRET=...            # secret for talos-provisioner@pve!bootstrapper
-#   hack/clone-talos-vm.sh --name lab-manager --ip 192.168.10.56 [--dry-run]
+#   image/scripts/clone-talos-vm.sh --name lab-manager --ip 192.168.10.56 [--dry-run]
 #
 # VM ID defaults from the IP using the VLAN 10 rule (192.168.10.56 -> 10056).
 # Re-running when the VM ID already exists is a no-op, except that a stopped VM is started (a failed start must not look like success).

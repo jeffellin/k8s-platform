@@ -31,7 +31,7 @@ It replaces the earlier hand-made version in `ellin-gitops/infra-pre/longhorn` (
 
 Longhorn's data path is `defaultSettings.defaultDataPath` (option `longhorn_data_path`). A Talos user volume named `X` is mounted at `/var/mnt/X`.
 
-- **New clusters:** name the user volume `longhorn` (so the path is `/var/mnt/longhorn`, the default). `hack/talos-gen-config.sh` now names it `longhorn` (clusters built after the `ellinj/talos-automation:dev` image is rebuilt). This is variant B: **untested** (no kubelet mount added yet, see below); test it on a throwaway cluster before relying on it. Why a separate disk: Longhorn filling `/var` would also starve images, logs and kubelet state (DiskPressure), and the settings below assume a dedicated disk. A separate disk is not wiped by an in-place `talosctl upgrade`, but it is recreated empty when a VM is replaced or removed.
+- **New clusters:** name the user volume `longhorn` (so the path is `/var/mnt/longhorn`, the default). `image/scripts/talos-gen-config.sh` now names it `longhorn` (clusters built after the `ellinj/talos-automation:dev` image is rebuilt). This is variant B: **untested** (no kubelet mount added yet, see below); test it on a throwaway cluster before relying on it. Why a separate disk: Longhorn filling `/var` would also starve images, logs and kubelet state (DiskPressure), and the settings below assume a dedicated disk. A separate disk is not wiped by an in-place `talosctl upgrade`, but it is recreated empty when a VM is replaced or removed.
 - **Existing clusters** (`lab-manager`, `demo1`, `demo2`, `talos-test`): the volume is called `local-path-provisioner`, mounted at `/var/mnt/local-path-provisioner`, and is empty now that local-path is gone. Set `longhorn_data_path: /var/mnt/local-path-provisioner` rather than re-provisioning disks. The name is misleading, the path works.
 - The Longhorn docs show a `UserVolumeConfig` with `grow: false` and a `maxSize`. Ours has `minSize` and takes the whole non-system disk, which is what we want for 50 GB.
 
@@ -55,7 +55,7 @@ machine:
         options: [bind, rshared, rw]
 ```
 
-The Sidero Labs Longhorn guide does not mention it. We do not know which is right for Talos 1.14 with a user volume, so **test it on a throwaway cluster before settling**: apply the patch with `talosctl patch machineconfig` on one worker, install Longhorn, create a PVC and a pod, and see whether the volume attaches and the pod can write. Try it without the mount first; add it if the instance manager or the pod fails to mount. Whichever works goes into `hack/talos-gen-config.sh` and the runbook.
+The Sidero Labs Longhorn guide does not mention it. We do not know which is right for Talos 1.14 with a user volume, so **test it on a throwaway cluster before settling**: apply the patch with `talosctl patch machineconfig` on one worker, install Longhorn, create a PVC and a pod, and see whether the volume attaches and the pod can write. Try it without the mount first; add it if the instance manager or the pod fails to mount. Whichever works goes into `image/scripts/talos-gen-config.sh` and the runbook.
 
 ## Options chosen (and why)
 
@@ -122,7 +122,7 @@ Not yet tested on demo2 (see the demo3 results below for variant B and scale-dow
 
 ## Trial results (2026-11-12, `demo3`, variant B, 2 workers, 2 replicas)
 
-`demo3`: control plane plus 2 workers on `pve2`, `storage: truenas-fast-storage`, `longhorn_replicas: "2"`, built after `hack/talos-gen-config.sh` named the data user volume `longhorn` (PR #44).
+`demo3`: control plane plus 2 workers on `pve2`, `storage: truenas-fast-storage`, `longhorn_replicas: "2"`, built after `image/scripts/talos-gen-config.sh` named the data user volume `longhorn` (PR #44).
 
 - **Variant B works with no kubelet bind mount and no machine-config change.** Longhorn's disk on each worker is `/var/mnt/longhorn`, xfs, 49 GiB (the 50 GB data disk, not the 64 GB system partition that variant A used), Ready.
 - A 1 GiB PVC and a pod: PVC Bound, attach succeeded in about 20 s, the pod wrote `hello-longhorn` and read it back. The volume was `attached`, `healthy`, with one replica on each worker. Persistence across a pod recreation was not repeated on demo3 (it was shown on demo2).

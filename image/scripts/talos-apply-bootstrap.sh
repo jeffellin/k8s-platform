@@ -3,9 +3,9 @@
 # Safe to re-run: skips apply if the node is already configured, and never
 # bootstraps if etcd is already running.
 #
-#   hack/talos-apply-bootstrap.sh lab-manager 192.168.10.56 [--dir DIR]
+#   image/scripts/talos-apply-bootstrap.sh lab-manager 192.168.10.56 [--dir DIR]
 #
-# Expects the output of hack/talos-gen-config.sh (default _talos/<name>/).
+# Expects the output of image/scripts/talos-gen-config.sh (default _talos/<name>/).
 set -euo pipefail
 
 NAME="${1:-}" IP="${2:-}"
@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 for f in controlplane.yaml talosconfig; do
-  [[ -f "$DIR/$f" ]] || { echo "missing $DIR/$f (run hack/talos-gen-config.sh first)" >&2; exit 1; }
+  [[ -f "$DIR/$f" ]] || { echo "missing $DIR/$f (run image/scripts/talos-gen-config.sh first)" >&2; exit 1; }
 done
 
 TC=(talosctl --talosconfig "$DIR/talosconfig" -e "$IP" -n "$IP")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Generate Talos secrets and machine configs for a cluster (idempotent).
 #
-#   hack/talos-gen-config.sh lab-manager 192.168.10.56 [--workers N] [--out DIR]
+#   image/scripts/talos-gen-config.sh lab-manager 192.168.10.56 [--workers N] [--out DIR]
 #
 # - secrets.yaml is created once and never overwritten (back it up: without it
 #   you cannot regenerate configs or get back into the cluster).
