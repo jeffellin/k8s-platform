@@ -35,7 +35,7 @@ spec:
           {{- $px := $env.proxmox -}}
           {{- $name := $xr.metadata.name -}}
           {{- /* Job pod templates are immutable: bump $rev whenever a talos/verify/platform Job spec changes so Crossplane recreates the Jobs (all scripts are idempotent). */ -}}
-          {{- $rev := "r3" -}}
+          {{- $rev := "r4" -}}
           {{- /* The platform Job has its own revision so a change to it re-runs only that (idempotent) layer, not talos/verify, on live clusters. */ -}}
           {{- $prev := "p2" -}}
           {{- $teardown := eq (dig "metadata" "annotations" "platform.ellin.net/teardown" "" $xr) "true" -}}
@@ -48,6 +48,8 @@ spec:
           {{- $tmpl := index $nodeCfg.templates $createdVersion -}}
           {{- $storage := $xr.spec.storage | default $nodeCfg.storage -}}
           {{- $ciStorage := $nodeCfg.cloudInitStorage | default "" -}}
+          {{- /* linked (default) or full: spec.cloneType, else the EnvironmentConfig's vm.cloneType. Only affects VMs cloned afterwards. */ -}}
+          {{- $cloneType := $xr.spec.cloneType | default (dig "vm" "cloneType" "" $env) | default "linked" -}}
           {{- $nodes := list -}}
           {{- $cp := dict "name" (printf "%s-cp-1" $name) "ip" $xr.spec.network.controlPlaneIP "spec" $xr.spec.controlPlane -}}
           {{- $nodes = append $nodes $cp -}}
@@ -186,6 +188,7 @@ spec:
                         - {name: TEMPLATE_ID, value: {{ $tmpl | quote }}}
                         - {name: TARGET_NODE, value: {{ $node | quote }}}
                         - {name: STORAGE, value: {{ $storage | quote }}}
+                        - {name: CLONE_TYPE, value: {{ $cloneType | quote }}}
                         {{- if $ciStorage }}
                         - {name: CI_STORAGE, value: {{ $ciStorage | quote }}}
                         {{- end }}
@@ -340,6 +343,7 @@ spec:
                         - {name: TEMPLATE_ID, value: {{ $tmpl | quote }}}
                         - {name: TARGET_NODE, value: {{ $node | quote }}}
                         - {name: STORAGE, value: {{ $storage | quote }}}
+                        - {name: CLONE_TYPE, value: {{ $cloneType | quote }}}
                         {{- if $ciStorage }}
                         - {name: CI_STORAGE, value: {{ $ciStorage | quote }}}
                         {{- end }}

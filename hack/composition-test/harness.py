@@ -24,7 +24,7 @@ def xr(version='v1.14.5', status=None, annotations=None):
     return x
 def done(): return {'resource':{'status':{'atProvider':{'manifest':{'status':{'succeeded':1}}}}}}
 def render(which, x, vms_ready=True):
-    obs={'vm-demo1-cp-1-r3':done()} if vms_ready else {}
+    obs={('vm-demo1-cp-1-r3' if which=='old' else 'vm-demo1-cp-1-r4'):done()} if vms_ready else {}
     inp={'observed':{'composite':{'resource':x},'resources':obs},'context':{'apiextensions.crossplane.io/environment':env}}
     open(S+'/in.json','w').write(json.dumps(inp))
     p=subprocess.run([HERE+'/render',S+f'/{which}.tmpl',S+'/in.json'],capture_output=True,text=True)
@@ -45,8 +45,16 @@ def check(name, cond, extra=''): print(('PASS ' if cond else 'FAIL ')+name+(' '+
 o,e=render('old',xr()); n,e2=render('new',xr()); assert o and n,(e,e2)
 jo,jn=jobs(o),jobs(n)
 print('resources:',sorted(jn))
-check('A  same resource set old/new', sorted(jo)==sorted(jn))
-check('A  all Objects identical old/new', jo==jn)
+def norm(js):   # map r4 -> r3 and drop CLONE_TYPE (the two intended changes of the clone-type PR)
+    out={}
+    for k,v in js.items():
+        v=json.loads(json.dumps(v).replace('-r4','-r3'))
+        for c in v.get('spec',{}).get('template',{}).get('spec',{}).get('containers',[]):
+            c['env']=[e for e in c.get('env',[]) if e['name']!='CLONE_TYPE']
+        out[k.replace('-r4','-r3')]=v
+    return out
+check('A  same resource set old/new (modulo r3->r4)', sorted(jo)==sorted(norm(jn)))
+check('A  all Objects identical old/new, except the r4 names and CLONE_TYPE', jo==norm(jn))
 check('A  new status records createdTalosVersion v1.14.5', status(n).get('createdTalosVersion')=='v1.14.5', str(status(n).get('createdTalosVersion')))
 # B: spec bumped to 1.14.6 but status holds the creation version -> VM/Talos Jobs unchanged
 b,e=render('new',xr('v1.14.6',{'createdTalosVersion':'v1.14.5'})); assert b,e
@@ -59,12 +67,12 @@ diff=[k for k in jo if jo[k]!=job.get(k)]
 check('B2 OLD composition + bump changes Jobs (confirms the problem)', len(diff)>0, str(diff))
 # C: brand-new cluster at v1.14.6 uses template 9101
 c,e=render('new',xr('v1.14.6'),vms_ready=False); jc=jobs(c)
-vm=jc['vm-demo1-cp-1-r3']['spec']['template']['spec']['containers'][0]['env']
+vm=jc['vm-demo1-cp-1-r4']['spec']['template']['spec']['containers'][0]['env']
 tid=[x['value'] for x in vm if x['name']=='TEMPLATE_ID'][0]
 check('C  new v1.14.6 cluster clones template 9101', tid=='9101', tid)
 check('C  status createdTalosVersion v1.14.6', status(c)['createdTalosVersion']=='v1.14.6')
 # A2: template used for the unchanged case
-vm=jn['vm-demo1-cp-1-r3']['spec']['template']['spec']['containers'][0]['env']
+vm=jn['vm-demo1-cp-1-r4']['spec']['template']['spec']['containers'][0]['env']
 tid=[x['value'] for x in vm if x['name']=='TEMPLATE_ID'][0]
 check('A  v1.14.5 cluster clones template 9100', tid=='9100', tid)
 # D: missing template -> clear failure
@@ -76,7 +84,7 @@ check('E  teardown not blocked by a missing template', t is not None and any('te
 
 # ---- F2 upgrade layer ----
 def obs_built(extra=None):
-    o={k:done() for k in ['vm-demo1-cp-1-r3','talos-demo1-r3','verify-demo1-r3','platform-demo1-p2']}
+    o={k:done() for k in ['vm-demo1-cp-1-r4','talos-demo1-r4','verify-demo1-r4','platform-demo1-p2']}
     o.update(extra or {}); return o
 def render_obs(which, x, obs):
     inp={'observed':{'composite':{'resource':x},'resources':obs},'context':{'apiextensions.crossplane.io/environment':env}}
@@ -107,7 +115,7 @@ check('U3 succeeded: status.talosVersion v1.14.6, phase Ready, Object still rend
 u4,e=render_obs('new',xr('v1.14.6',{'createdTalosVersion':'v1.14.5','talosVersion':'v1.14.6'}),obs_built({UP:done()}))
 check('U4 settled: upgrade Object dropped, status stays v1.14.6', UP not in jobs(u4) and status(u4)['talosVersion']=='v1.14.6' and status(u4)['phase']=='Ready')
 # U5/U7: platform not finished
-partial={k:done() for k in ['vm-demo1-cp-1-r3','talos-demo1-r3']}
+partial={k:done() for k in ['vm-demo1-cp-1-r4','talos-demo1-r4']}
 u5,e=render_obs('new',xr('v1.14.6',base_status),partial)
 check('U5 bump while the cluster is still being built: no upgrade yet', UP not in jobs(u5))
 u7,e=render_obs('new',xr('v1.14.6',base_status),{**partial,UP:{}} | {UP:{'resource':{'status':{}}}})
@@ -117,7 +125,7 @@ u6,e=render_obs('new',xr('v1.14.6',base_status),obs_built({UP:{'resource':{'stat
 c=cond(u6,'Upgrading'); check('U6 failed: UpgradeFailed with a hint', c['reason']=='UpgradeFailed' and 'delete that Job' in c.get('message',''))
 # U8: cluster with workers gets the worker IPs
 xw=xr('v1.14.6',base_status); xw['spec']['network']['workerIPs']=['192.168.10.58','192.168.10.59']; xw['spec']['workers']={'count':2}
-ow=obs_built({k:done() for k in ['vm-demo1-w-1-r3','vm-demo1-w-2-r3']})
+ow=obs_built({k:done() for k in ['vm-demo1-w-1-r4','vm-demo1-w-2-r4']})
 u8,e=render_obs('new',xw,ow); j8=jobs(u8)
 check('U8 workers: WORKER_IPS passed', UP in j8 and {x['name']:x['value'] for x in j8[UP]['spec']['template']['spec']['containers'][0]['env']}['WORKER_IPS']=='192.168.10.58,192.168.10.59')
 # U9: demo1 case: no status.talosVersion yet (falls back to the creation version)
@@ -126,3 +134,16 @@ check('U9 no status.talosVersion yet: falls back and records it', status(u9)['ta
 # U10: teardown never renders an upgrade
 ut,e=render_obs('new',xr('v1.14.6',base_status,annotations={'platform.ellin.net/teardown':'true'}),obs_built())
 check('U10 teardown: no upgrade Object', not any(k.startswith('upgrade-') for k in jobs(ut)))
+
+# ---- clone type ----
+def clone_env(docs, x_name='vm-demo1-cp-1-r4'):
+    return {e['name']:e['value'] for e in jobs(docs)[x_name]['spec']['template']['spec']['containers'][0]['env']}
+c1,e=render('new',xr('v1.14.5'),vms_ready=False); ce=clone_env(c1)   # brand-new cluster, EnvironmentConfig default
+check('T1 default: CLONE_TYPE linked (EnvironmentConfig vm.cloneType)', ce.get('CLONE_TYPE')=='linked', str(ce.get('CLONE_TYPE')))
+xf=xr('v1.14.5'); xf['spec']['cloneType']='full'
+f,e=render('new',xf,vms_ready=False); check('T2 spec.cloneType full overrides the default', clone_env(f).get('CLONE_TYPE')=='full', e or '')
+env_saved=copy.deepcopy(env); env['vm'].pop('cloneType',None)
+g,e=render('new',xr('v1.14.5'),vms_ready=False); check('T3 neither set: falls back to linked', clone_env(g).get('CLONE_TYPE')=='linked', e or '')
+env['vm']['cloneType']='full'
+h,e=render('new',xr('v1.14.5'),vms_ready=False); check('T4 EnvironmentConfig full is the default', clone_env(h).get('CLONE_TYPE')=='full', e or '')
+env.clear(); env.update(env_saved)
