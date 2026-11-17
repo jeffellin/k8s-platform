@@ -83,6 +83,18 @@ image `ellinj/talos-automation:dev`; `VLAN10-IP-ALLOCATION.md` in `~/homelab/ter
 - Certificates take 2-5 minutes after Flux is up (DNS-01 via Route53).
 - GitHub release downloads (Flux Operator) were flaky once; the platform Job retries. If a Job is `Failed`, read its logs, then see Troubleshooting.
 
+### Proxmox templates
+
+Name: `talos-<version>-<storage>`; the EnvironmentConfig (`apps/crossplane-environment/environmentconfig.yaml`) maps node and Talos version to the VM ID. The name is only a label (nothing reads it); the ID is what counts.
+
+| ID | Name | Talos | Owner node | System disk on | Used for |
+|---|---|---|---|---|---|
+| 9100 | `talos-v1.14.5-local-lvm` | v1.14.5 | `pve` | `local-lvm` | `pve` clusters on local-lvm |
+| 9101 | `talos-v1.14.6-local-lvm` | v1.14.6 | `pve` | `local-lvm` | `pve` clusters on local-lvm |
+| 9102 | `talos-v1.14.5-truenas-fast` | v1.14.5 | `pve` | `truenas-fast-storage` (shared) | clusters on the NAS, on any node (`--target`); linked clones |
+
+Keep a template while any VM cloned from it exists (linked clones, see "Linked or full clone" in the Creating section). A new Talos version needs a new template on each storage you want linked clones on; otherwise the clone Job falls back to a full copy. Update this table when you add or remove one.
+
 ## 2. Update a cluster
 
 What you can change today, and how:
