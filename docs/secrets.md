@@ -8,9 +8,11 @@
 Each secret is encrypted to admin + its cluster only. `.sops.yaml` is GENERATED from `keys/*.pub` by `hack/render.py`.
 
 ## New cluster: one pass, in this order
-1. Add the cluster + its apps to `clusters.yaml` (all apps, including those needing secrets).
-2. `hack/new-sops-cluster.sh <cluster>` -- creates admin/cluster age keys (if missing), writes `keys/*.pub`, and drops
-   `clusters/<cluster>/secrets/<app>/*.example.yaml` skeletons for every app that declares `secrets:` in its `meta.yaml`.
+1. `hack/new-sops-cluster.sh <cluster> --lb-range A-B [--single-node]` -- adds the cluster to `clusters.yaml` (or list it yourself first
+   and omit the flags), creates admin/cluster age keys (if missing), writes `keys/*.pub`, reads the AWS credentials from 1Password
+   (`op://HomeLab/r53-aws`, via `hack/seed-secrets.sh`; needs `op` signed in) and writes the encrypted cert-manager and external-dns
+   secrets, then runs the strict render. Steps 2-4 below are only needed with `--no-seed` or when `op` is unavailable.
+2. Otherwise it drops `clusters/<cluster>/secrets/<app>/*.example.yaml` skeletons for every app that declares `secrets:` in its `meta.yaml`.
 3. For each skeleton: `cp x.example.yaml x.sops.yaml`, fill in, `sops --encrypt --in-place x.sops.yaml`.
 4. `hack/render.py` -- fails (listing what's wrong) if a declared secret is missing or not encrypted; otherwise
    writes the ResourceSets, secrets kustomizations/namespaces and `.sops.yaml`.
