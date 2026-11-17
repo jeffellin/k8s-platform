@@ -110,10 +110,15 @@ for a in cfg["apps"]:
 PY
 # Render now so .sops.yaml has a rule for this cluster (needed by `sops --encrypt`) and clusters/<name>/ exists.
 # Secrets that are not filled in yet are warnings here; the strict run below must pass before you commit.
+# Always write the files first: render.py checks ALL clusters, so another cluster's missing secret must not stop this one from rendering.
+python3 -I "$ROOT/hack/render.py" --allow-incomplete
 if [ "$SEEDED" = 1 ]; then
-  python3 -I "$ROOT/hack/render.py"
-  echo "Next: review, then: git add -A && commit/push && bootstrap/bootstrap.sh $C"
+  if python3 -I "$ROOT/hack/render.py"; then
+    echo "Next: review, then: git add -A && commit/push && bootstrap/bootstrap.sh $C"
+  else
+    echo "$C is rendered, but the strict render above reports problems (check whether they are about $C or another cluster) before you commit." >&2
+    exit 1
+  fi
   exit 0
 fi
-python3 -I "$ROOT/hack/render.py" --allow-incomplete
 echo "Next: fill + encrypt the secrets above, then: hack/render.py (strict: fails until every secret is encrypted) && git add -A && commit/push && bootstrap/bootstrap.sh $C"
