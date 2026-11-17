@@ -37,6 +37,10 @@ spec:
                 maxLength: 64
                 pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
                 description: Proxmox storage ID for the VM system and data disks (default from the node's EnvironmentConfig entry). Must exist on the target node.
+              cloneType:
+                type: string
+                enum: [linked, full]
+                description: "How VMs are cloned from the template: linked (default from the EnvironmentConfig, seconds, shares blocks with the template, which must then be kept) or full (a copy, independent of the template). Only affects VMs cloned afterwards; a linked clone falls back to full when the template's disk is not on the target storage."
               network:
                 type: object
                 required: [controlPlaneIP]

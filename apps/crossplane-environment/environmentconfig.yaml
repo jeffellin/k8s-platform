@@ -37,6 +37,7 @@ data:
     memoryMiB: 8192
     systemDiskGiB: 64
     dataDiskGiB: 50
+    cloneType: linked            # linked | full (per cluster: spec.cloneType). Linked clones need a template on the target storage; otherwise the clone Job falls back to full.
   talos:
     version: v1.14.5
     schematic: 88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b

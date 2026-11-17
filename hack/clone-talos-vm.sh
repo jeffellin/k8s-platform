@@ -6,6 +6,9 @@
 #
 # VM ID defaults from the IP using the VLAN 10 rule (192.168.10.56 -> 10056).
 # Re-running when the VM ID already exists is a no-op, except that a stopped VM is started (a failed start must not look like success).
+# CLONE_TYPE: linked (default) or full. A linked clone is a snapshot-based clone of the template disk (seconds, shares blocks with the template, which then
+# cannot be deleted while clones exist); a full clone copies the disk (minutes on network storage). A linked clone has to stay on the template's storage, so
+# the script falls back to a full clone, with a message, when the template is not a template or its disk is not on STORAGE.
 # CI_STORAGE (optional): put the cloud-init drive on this storage instead of the clone's STORAGE. Needed when STORAGE is a
 # network/plugin storage (e.g. truenasplugin iSCSI), where Proxmox cannot write the cloud-init ISO at start (taint error).
 set -euo pipefail
@@ -28,6 +31,8 @@ MEMORY_MIB="${MEMORY_MIB:-8192}"
 DATA_GIB="${DATA_GIB:-50}"                 # scsi1, used by UserVolumeConfig
 TAGS="${TAGS:-talos}"
 CI_STORAGE="${CI_STORAGE:-}"
+CLONE_TYPE="${CLONE_TYPE:-linked}"
+[[ "$CLONE_TYPE" == linked || "$CLONE_TYPE" == full ]] || { echo "CLONE_TYPE must be linked or full (got '$CLONE_TYPE')" >&2; exit 2; }
 
 NAME="" IP="" VMID="" DRY=0
 while [[ $# -gt 0 ]]; do
@@ -81,7 +86,7 @@ call() {  # call METHOD PATH NODE [curl data args...]
 }
 
 echo "plan: clone ${TEMPLATE_ID} -> VM ${VMID} '${NAME}' on ${TARGET_NODE}; net0 ${BRIDGE}${VLAN:+ tag ${VLAN}}; ip ${IP}/${PREFIX} gw ${GATEWAY}"
-echo "      ${CORES} cores, ${MEMORY_MIB} MiB, data disk ${DATA_GIB} GiB on ${STORAGE}, tags '${TAGS};${NAME}'"
+echo "      clone type ${CLONE_TYPE}; ${CORES} cores, ${MEMORY_MIB} MiB, data disk ${DATA_GIB} GiB on ${STORAGE}, tags '${TAGS};${NAME}'"
 [[ $DRY == 1 ]] && { echo "dry-run: no changes made"; exit 0; }
 
 # Keep the cloud-init drive (ide2) on CI_STORAGE. Idempotent and safe to repeat after a partial failure (drive deleted but not
@@ -116,11 +121,21 @@ if [[ -n "$existing" ]]; then
   exit 0
 fi
 
-echo "cloning..."
-call POST "/nodes/${TEMPLATE_NODE}/qemu/${TEMPLATE_ID}/clone" "$TEMPLATE_NODE" \
-  --data-urlencode "newid=${VMID}" --data-urlencode "name=${NAME}" \
-  --data-urlencode "full=1" --data-urlencode "target=${TARGET_NODE}" \
-  --data-urlencode "storage=${STORAGE}"
+# linked clone: only if the template is a real template and its system disk is on STORAGE (a linked clone cannot change storage)
+mode="$CLONE_TYPE"
+if [[ "$mode" == linked ]]; then
+  tcfg="$(api GET "/nodes/${TEMPLATE_NODE}/qemu/${TEMPLATE_ID}/config" | jq -c '.data // {}')"
+  tstore="$(jq -r '.scsi0 // empty | split(":")[0]' <<<"$tcfg")"
+  if [[ "$(jq -r '.template // 0' <<<"$tcfg")" != 1 ]]; then
+    echo "note: VM ${TEMPLATE_ID} is not marked as a template: using a full clone"; mode=full
+  elif [[ "$tstore" != "$STORAGE" ]]; then
+    echo "note: template ${TEMPLATE_ID} system disk is on '${tstore:-unknown}', not '${STORAGE}': a linked clone cannot change storage, using a full clone"; mode=full
+  fi
+fi
+echo "cloning (${mode})..."
+clone_args=(--data-urlencode "newid=${VMID}" --data-urlencode "name=${NAME}" --data-urlencode "target=${TARGET_NODE}")
+if [[ "$mode" == full ]]; then clone_args+=(--data-urlencode "full=1" --data-urlencode "storage=${STORAGE}"); else clone_args+=(--data-urlencode "full=0"); fi
+call POST "/nodes/${TEMPLATE_NODE}/qemu/${TEMPLATE_ID}/clone" "$TEMPLATE_NODE" "${clone_args[@]}"
 
 echo "configuring..."
 call POST "/nodes/${TARGET_NODE}/qemu/${VMID}/config" "$TARGET_NODE" \
