@@ -1,7 +1,9 @@
 # Build a SOPS cluster (N nodes)
 
-Run everything from the repo root (`~/homelab/k8s-platform`). Needs: `lab-manager` running with namespace `talos-automation`, the `cluster-up`
-ServiceAccount/Role and Secret `proxmox-token` (see `lab-manager-build-runbook.md`, Part B step 3); `op` signed in; `sops`, `age`, `jq`, `kubectl`, `talosctl`.
+This is also the first half of building a new manager (another `lab-manager`): follow it, plus the **Manager extras** at the bottom.
+
+Run everything from the repo root (`~/homelab/k8s-platform`). No other cluster is needed. Tools: `talosctl` (v1.14.5), `yq`, `jq`, `kubectl`, `curl`, `sops`, `age`, `gh`, and `op` signed in.
+You also need the Proxmox template (VM 9100) and the Proxmox API token secret for `talos-provisioner@pve!bootstrapper`.
 
 ## 1. Set the variables
 
@@ -12,7 +14,7 @@ export NAME=test2
 export CP_IP=192.168.10.60
 export WORKER_IPS=192.168.10.61,192.168.10.62        # empty = single node
 export LB_RANGE=192.168.11.45-192.168.11.48
-export MGR=~/homelab/k8s-platform/_talos/lab-manager/kubeconfig
+export PVE_TOKEN_SECRET=...                           # Proxmox API token secret
 ```
 
 ## 2. Record the IPs
@@ -41,46 +43,26 @@ git switch main && git pull
 
 ## 5. Build the VMs and the Talos cluster
 
-Runs `cluster-up.sh` from the `ellinj/talos-automation` image as a Job on `lab-manager`
-(clone VMs, generate config, apply, bootstrap, join workers; safe to re-run). Takes about 5-10 minutes.
+Safe to re-run. Takes about 5-10 minutes. Output goes to `_talos/$NAME/`.
 
 ```bash
-envsubst '$NAME $CP_IP $WORKER_IPS' <<'EOF' | kubectl --kubeconfig $MGR apply -f -
-apiVersion: batch/v1
-kind: Job
-metadata: {name: "cluster-up-$NAME", namespace: talos-automation}
-spec:
-  backoffLimit: 0
-  ttlSecondsAfterFinished: 86400
-  template:
-    spec:
-      serviceAccountName: cluster-up
-      restartPolicy: Never
-      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
-      containers:
-        - name: cluster-up
-          image: ellinj/talos-automation:dev
-          command: ["cluster-up.sh"]
-          env:
-            - {name: CLUSTER_NAME, value: "$NAME"}
-            - {name: CP_IP, value: "$CP_IP"}
-            - {name: WORKER_IPS, value: "$WORKER_IPS"}
-            - {name: HOME, value: /work}
-          envFrom: [{secretRef: {name: proxmox-token}}]
-          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
-          volumeMounts: [{name: work, mountPath: /work}]
-      volumes: [{name: work, emptyDir: {}}]
-EOF
-kubectl --kubeconfig $MGR -n talos-automation logs -f job/cluster-up-$NAME
+export PATH=$PWD/image/scripts:$PATH
+IFS=, read -ra W <<<"$WORKER_IPS"
+D=_talos/$NAME
+
+clone-talos-vm.sh --name $NAME-cp-1 --ip $CP_IP
+for i in "${!W[@]}"; do clone-talos-vm.sh --name $NAME-w-$((i+1)) --ip ${W[$i]}; done
+
+talos-gen-config.sh $NAME $CP_IP --workers ${#W[@]} --out $D
+talos-apply-bootstrap.sh $NAME $CP_IP --dir $D
+for ip in "${W[@]}"; do talos-apply-worker.sh $NAME $ip --dir $D; done
 ```
 
-It ends with `cluster ready: $NAME`. If the Job already exists from an earlier attempt, delete it first:
-`kubectl --kubeconfig $MGR -n talos-automation delete job cluster-up-$NAME`.
+**Back up `_talos/$NAME/secrets.yaml` and `_talos/$NAME/talosconfig` now** (1Password). They are the cluster's only identity.
 
-## 6. Get the kubeconfig and talosconfig
+## 6. Check the nodes
 
 ```bash
-hack/get-kubeconfig.sh $NAME --talosconfig
 source hack/kctx.sh && kctx $NAME
 kubectl get nodes
 talosctl health
@@ -100,7 +82,29 @@ kubectl get nodes
 curl -sI https://hello-$NAME.ellin.net | head -1       # 200 once cert-manager, external-dns and MetalLB are up
 ```
 
+## Manager extras (only when building another lab-manager)
+
+- **Step 1:** leave `WORKER_IPS` empty (single node) and use `NAME=lab-manager`-style naming for the new one.
+- **Step 3:** pass `--single-node`. Then, before step 4, add these apps to the new cluster's `apps:` list in `clusters.yaml` (copy from the `lab-manager` entry) and run `hack/render.py`:
+  `crossplane`, `crossplane-config`, `crossplane-providerconfig`, `crossplane-environment`, `crossplane-api`, `talos-clusters`.
+- **Between steps 6 and 7** (the manager's Jobs need this, and it is not in Git), with `kctx $NAME` active:
+
+```bash
+yq 'select(.kind != "Job")' deploy/talos-automation/cluster-up-lab-test.yaml | kubectl apply -f -   # namespace + cluster-up RBAC only
+kubectl -n talos-automation create secret generic proxmox-token \
+  --from-literal=PVE_ENDPOINT=https://192.168.1.52:8006/api2/json \
+  --from-literal=PVE_TOKEN_ID='talos-provisioner@pve!bootstrapper' \
+  --from-literal=PVE_TOKEN_SECRET="$PVE_TOKEN_SECRET"
+kubectl -n talos-automation create secret generic aws-credentials \
+  --from-literal=access-key-id="$(op read 'op://HomeLab/r53-aws/access key id')" \
+  --from-literal=secret-access-key="$(op read 'op://HomeLab/r53-aws/secret access key')" \
+  --from-literal=region=us-east-1
+```
+
+- **Step 7:** pin the Flux Operator: `FLUX_OPERATOR_VERSION=v0.62.1 KUBECONFIG=... bootstrap/bootstrap.sh $NAME`. Allow 10-15 minutes for Crossplane to come up.
+- More detail and troubleshooting: `lab-manager-build-runbook.md`.
+
 ## Not covered
 
-- Teardown: delete the VMs in Proxmox, the three Secrets (`$NAME-talos-secrets`, `-talosconfig`, `-kubeconfig`) in `talos-automation`, and the cluster's entries in `clusters.yaml`, `clusters/$NAME/` and `keys/$NAME.pub`. Free its rows in `VLAN10-IP-ALLOCATION.md`.
-- VM placement and storage: defaults are node `pve`, storage `local-lvm`. Add `{name: TARGET_NODE, value: pve2}` and `{name: STORAGE, value: ...}` to the Job `env` to change them.
+- Teardown: delete the VMs in Proxmox and the cluster's entries in `clusters.yaml`, `clusters/$NAME/` and `keys/$NAME.pub`, and free its rows in `VLAN10-IP-ALLOCATION.md`.
+- VM placement and storage: defaults are node `pve` and storage `local-lvm`. Export `TARGET_NODE` and `STORAGE` before step 5 to change them.
