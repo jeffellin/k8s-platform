@@ -84,25 +84,44 @@ curl -sI https://hello-$NAME.ellin.net | head -1       # 200 once cert-manager, 
 
 ## Manager extras (only when building another lab-manager)
 
-- **Step 1:** leave `WORKER_IPS` empty (single node) and use `NAME=lab-manager`-style naming for the new one.
-- **Step 3:** pass `--single-node`. Then, before step 4, add these apps to the new cluster's `apps:` list in `clusters.yaml` (copy from the `lab-manager` entry) and run `hack/render.py`:
-  `crossplane`, `crossplane-config`, `crossplane-providerconfig`, `crossplane-environment`, `crossplane-api`, `talos-clusters`.
-- **Between steps 6 and 7** (the manager's Jobs need this, and it is not in Git), with `kctx $NAME` active:
+**Step 1:** leave `WORKER_IPS` empty (a manager is a single node).
+
+**Step 3:** use `--manager` instead of `--single-node`. It implies single node and also enables the Crossplane apps
+(`crossplane`, `crossplane-config`, `crossplane-providerconfig`, `crossplane-environment`, `crossplane-api`, `talos-clusters`):
 
 ```bash
-yq 'select(.kind != "Job")' deploy/talos-automation/cluster-up-lab-test.yaml | kubectl apply -f -   # namespace + cluster-up RBAC only
+hack/new-sops-cluster.sh $NAME --manager --lb-range $LB_RANGE
+```
+
+**Between steps 6 and 7:** create the state the manager's Jobs need. It is not in Flux, so do it by hand, with `kctx $NAME` active.
+
+a. Namespace `talos-automation`, ServiceAccount `cluster-up` and its Role/RoleBinding (secrets get/create/update/patch):
+
+```bash
+kubectl apply -f deploy/talos-automation/cluster-up-rbac.yaml
+```
+
+b. Secret `proxmox-token`: how the Jobs reach Proxmox to clone VMs.
+
+```bash
 kubectl -n talos-automation create secret generic proxmox-token \
   --from-literal=PVE_ENDPOINT=https://192.168.1.52:8006/api2/json \
   --from-literal=PVE_TOKEN_ID='talos-provisioner@pve!bootstrapper' \
   --from-literal=PVE_TOKEN_SECRET="$PVE_TOKEN_SECRET"
+```
+
+c. Secret `aws-credentials`: the composition copies it into every child cluster.
+
+```bash
 kubectl -n talos-automation create secret generic aws-credentials \
   --from-literal=access-key-id="$(op read 'op://HomeLab/r53-aws/access key id')" \
   --from-literal=secret-access-key="$(op read 'op://HomeLab/r53-aws/secret access key')" \
   --from-literal=region=us-east-1
 ```
 
-- **Step 7:** pin the Flux Operator: `FLUX_OPERATOR_VERSION=v0.62.1 KUBECONFIG=... bootstrap/bootstrap.sh $NAME`. Allow 10-15 minutes for Crossplane to come up.
-- More detail and troubleshooting: `lab-manager-build-runbook.md`.
+**Step 7:** pin the Flux Operator: `FLUX_OPERATOR_VERSION=v0.62.1 KUBECONFIG=_talos/$NAME/kubeconfig bootstrap/bootstrap.sh $NAME`. Allow 10-15 minutes for Crossplane. `crossplane-api` stays not-Ready until (a) exists, then retries.
+
+Then prove it: `hack/new-talos-cluster.sh <name> --workers 1`, merge, and watch it reach `Ready`. More detail: `lab-manager-build-runbook.md`.
 
 ## Not covered
 

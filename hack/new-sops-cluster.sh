@@ -3,11 +3,12 @@
 # For clusters whose secrets are SOPS files in Git (lab-manager, talos-test). Crossplane-built clusters
 # (secrets: manager) use hack/new-talos-cluster.sh instead and need no keys.
 #
-#   hack/new-sops-cluster.sh <cluster> [--lb-range A-B] [--hello-host HOST] [--single-node] [--no-seed]
+#   hack/new-sops-cluster.sh <cluster> [--lb-range A-B] [--hello-host HOST] [--single-node] [--manager] [--no-seed]
 #
 # If <cluster> is not in clusters.yaml yet, an entry is appended (default app set: metallb, metallb-config, metrics-server,
 # contour, cert-manager, cluster-issuers, external-dns, hello-nginx) and --lb-range is required (pick a free range from
 # VLAN10-IP-ALLOCATION.md). --single-node sets metallb_ignore_exclude_lb so the control plane serves LoadBalancer IPs.
+# --manager (implies --single-node) also enables the Crossplane apps, making this a cluster manager like lab-manager.
 # If the cluster is already listed, clusters.yaml is left alone and the flags are not accepted.
 #
 # The AWS credentials secrets (cert-manager, external-dns) are then read from 1Password and written SOPS-encrypted by
@@ -15,30 +16,31 @@
 # get the old behaviour (*.example.yaml skeletons to fill in by hand). If `op` is missing or not signed in, it falls back to that too.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-C="" LB="" HOST="" SINGLE=0 SEED=1
+C="" LB="" HOST="" SINGLE=0 SEED=1 MANAGER=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --lb-range) LB="${2:?--lb-range needs A-B}"; shift 2 ;;
     --hello-host) HOST="${2:?--hello-host needs a host}"; shift 2 ;;
     --single-node) SINGLE=1; shift ;;
     --no-seed) SEED=0; shift ;;
-    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --manager) MANAGER=1; SINGLE=1; shift ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) [ -z "$C" ] || { echo "only one cluster name allowed" >&2; exit 2; }; C="$1"; shift ;;
   esac
 done
-[ -n "$C" ] || { echo "usage: $0 <cluster> [--lb-range A-B] [--hello-host HOST] [--single-node] [--no-seed]" >&2; exit 2; }
+[ -n "$C" ] || { echo "usage: $0 <cluster> [--lb-range A-B] [--hello-host HOST] [--single-node] [--manager] [--no-seed]" >&2; exit 2; }
 command -v age-keygen >/dev/null || { echo "install age first"; exit 1; }
 # Add the clusters.yaml entry first (before any key is created) so a bad name/args fails with nothing left behind.
-python3 -I - "$ROOT" "$C" "$LB" "$HOST" "$SINGLE" <<'PY'
+python3 -I - "$ROOT" "$C" "$LB" "$HOST" "$SINGLE" "$MANAGER" <<'PY'
 import sys, re, pathlib, yaml
-root, c, lb, host, single = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5] == "1"
+root, c, lb, host, single, manager = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5] == "1", sys.argv[6] == "1"
 def die(m): print("error: " + m, file=sys.stderr); sys.exit(1)
 if not re.fullmatch(r"[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?", c): die("name must be a lowercase DNS label (max 32 chars)")
 f = root / "clusters.yaml"
 cfg = yaml.safe_load(f.read_text())
 if c in cfg["clusters"]:
-    if lb or host or single: die(f"{c} is already in clusters.yaml; edit it there instead of passing --lb-range/--hello-host/--single-node")
+    if lb or host or single or manager: die(f"{c} is already in clusters.yaml; edit it there instead of passing --lb-range/--hello-host/--single-node/--manager")
     print(f"{c} already in clusters.yaml, leaving it as is")
     sys.exit(0)
 if not lb: die(f"{c} is not in clusters.yaml: pass --lb-range A-B (a free MetalLB range, see VLAN10-IP-ALLOCATION.md) to add it")
@@ -55,6 +57,7 @@ for n, cl in cfg["clusters"].items():
             if lo <= phi and plo <= hi: die(f"--lb-range overlaps {n}'s MetalLB pool {pool}")
 host = host or f"hello-{c}.ellin.net"
 opt = '\n        options:\n          metallb_ignore_exclude_lb: "true"   # single node: the control plane must serve LoadBalancer IPs' if single else ""
+mgr = "".join(f"      - name: {a}\n" for a in ("crossplane", "crossplane-config", "crossplane-providerconfig", "crossplane-environment", "crossplane-api", "talos-clusters")) if manager else ""
 entry = f"""
   {c}:                              # SOPS-managed cluster (created by hack/new-sops-cluster.sh)
     vars:
@@ -72,7 +75,7 @@ entry = f"""
       - name: hello-nginx
         options:
           hello_host: {host}
-"""
+{mgr}"""
 f.write_text(f.read_text().rstrip("\n") + "\n" + entry)
 yaml.safe_load(f.read_text())["clusters"][c]   # still valid YAML with the new key
 print(f"added {c} to clusters.yaml (MetalLB {lb}, host {host})")

@@ -1,0 +1,25 @@
+# Out-of-band state the manager's Jobs need (not applied by Flux; backlog F11): namespace + the `cluster-up` ServiceAccount and RBAC.
+#   kubectl apply -f deploy/talos-automation/cluster-up-rbac.yaml
+# The Secrets proxmox-token and aws-credentials (in this namespace) are not in Git either: see docs/sops-cluster-runbook.md.
+apiVersion: v1
+kind: Namespace
+metadata: {name: talos-automation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: cluster-up, namespace: talos-automation}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: cluster-up, namespace: talos-automation}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: cluster-up, namespace: talos-automation}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: cluster-up}
+subjects:
+  - {kind: ServiceAccount, name: cluster-up, namespace: talos-automation}
