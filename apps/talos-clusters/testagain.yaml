@@ -5,7 +5,7 @@ kind: TalosCluster
 metadata: {name: testagain, namespace: default}
 spec:
   node: pve2
-  storage: truneas-fast-storage
+  storage: truenas-fast-storage
   network:
     controlPlaneIP: 192.168.10.68
   workers: {count: 0}
