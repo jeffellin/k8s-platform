@@ -92,7 +92,7 @@ XRD validation (CEL): `len(workerIPs) == workers.count`; IPs outside DHCP range 
 
 ### 5.1 VM layer (clone of template 9100, nocloud)
 
-Template 9100 (per `SingleNodeKubernetesonProxmox.md` Step 2a; **the Proxmox API reports its name as `talos-v1.14.4`**, not v1.14.5 as the guide says. The installer image in `UnattendedInstallConfig` selects the installed version on first apply, so v1.14.5 may still be what lands on disk -- VERIFY. The `EnvironmentConfig` template map should be keyed by the real baked-in version): Talos v1.14.5 nocloud image, schematic
+Template 9100 (per `SingleNodeKubernetesonProxmox.md` Step 2a; **until 2026-11-17 the Proxmox API reported its name as `talos-v1.14.4`** although it holds v1.14.5; it is now named `talos-v1.14.5-local-lvm`, see the template table in `docs/talos-cluster-runbook.md`): Talos v1.14.5 nocloud image, schematic
 `88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b` (extensions `qemu-guest-agent`, `iscsi-tools`,
 `util-linux-tools`), q35, `--cpu host`, 4 cores/8 GiB, balloon off, virtio-scsi-single, guest agent on, SeaBIOS, `scsi0` 64G,
 `ide2` cloud-init drive, `net0` on `vmbr0` (**not VLAN 10**).

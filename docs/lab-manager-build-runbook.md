@@ -49,7 +49,7 @@ Do these while the old manager is still running. Anything that exists only on it
    its Secrets (`proxmox-token`, `aws-credentials`, any child cluster Secrets) and its Flux state are gone.
 
 What is **not** lost, verified 2026-11-09: the SOPS files and keys in Git (the age key on the Pi matches `keys/lab-manager.pub`, so no re-keying is needed), template 9100 on `pve`
-(`talos-v1.14.4`, installs v1.14.5), and everything Flux deploys. The audit of hand-made state on the manager found only: namespace `talos-automation`, ServiceAccount/Role/RoleBinding `cluster-up`,
+(template 9100, named `talos-v1.14.5-local-lvm` since 2026-11-17, was `talos-v1.14.4`; it installs v1.14.5), and everything Flux deploys. The audit of hand-made state on the manager found only: namespace `talos-automation`, ServiceAccount/Role/RoleBinding `cluster-up`,
 Secrets `proxmox-token` and `aws-credentials`, and a finished `cluster-up-lab-test` Job. (An empty namespace `clusters` also exists; it is not needed.) No hand-made cluster-wide RBAC.
 
 ## Exercise: zero-state rebuild (new VM, new Talos identity, new age key, new Proxmox token)
