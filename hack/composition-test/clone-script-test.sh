@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline test of hack/clone-talos-vm.sh's clone-type decision (linked, or full as a fallback or by request) against a fake Proxmox API (a mocked curl).
+# Offline test of image/scripts/clone-talos-vm.sh's clone-type decision (linked, or full as a fallback or by request) against a fake Proxmox API (a mocked curl).
 #   hack/composition-test/clone-script-test.sh      # needs bash, jq
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT; export MOCK_LOG="$T/log"
@@ -21,7 +21,7 @@ fail=0
 t() {  # t NAME EXPECT_REGEX SCSI0 TEMPLATE [ENV...]
   local name="$1" want="$2" scsi0="$3" tpl="$4"; shift 4; : > "$MOCK_LOG"
   PATH="$T:$PATH" PVE_TOKEN_SECRET=x TEMPLATE_ID=9102 STORAGE=truenas-fast-storage TARGET_NODE=pve2 T_SCSI0="$scsi0" T_TEMPLATE="$tpl" "$@" \
-    "$ROOT/hack/clone-talos-vm.sh" --name t1 --ip 192.168.10.90 >/dev/null 2>&1 || true
+    "$ROOT/image/scripts/clone-talos-vm.sh" --name t1 --ip 192.168.10.90 >/dev/null 2>&1 || true
   if grep -q "/clone" "$MOCK_LOG" && grep "/clone" "$MOCK_LOG" | grep -Eq "$want"; then echo "PASS $name"; else echo "FAIL $name: $(grep /clone "$MOCK_LOG" || echo 'no clone call')"; fail=1; fi
 }
 LV=truenas-fast-storage:vol-base-9102-disk-0-lun5,size=64G
@@ -30,5 +30,5 @@ t "default is linked"                      'full=0$'                            
 t "template on another storage: full"      'full=1 storage=truenas-fast-storage$'          'local-lvm:base-9100-disk-0,size=64G' 1 env CLONE_TYPE=linked
 t "not a template: full"                   'full=1 storage=truenas-fast-storage$'          'truenas-fast-storage:vm-9102-disk-0' 0 env CLONE_TYPE=linked
 t "full by request"                        'full=1 storage=truenas-fast-storage$'          "$LV" 1 env CLONE_TYPE=full
-if PATH="$T:$PATH" PVE_TOKEN_SECRET=x CLONE_TYPE=bogus "$ROOT/hack/clone-talos-vm.sh" --name t1 --ip 192.168.10.90 >/dev/null 2>&1; then echo "FAIL bad CLONE_TYPE accepted"; fail=1; else echo "PASS bad CLONE_TYPE refused"; fi
+if PATH="$T:$PATH" PVE_TOKEN_SECRET=x CLONE_TYPE=bogus "$ROOT/image/scripts/clone-talos-vm.sh" --name t1 --ip 192.168.10.90 >/dev/null 2>&1; then echo "FAIL bad CLONE_TYPE accepted"; fail=1; else echo "PASS bad CLONE_TYPE refused"; fi
 exit $fail

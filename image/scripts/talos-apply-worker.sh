@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Apply worker.yaml to a new worker node and wait for it to join. Idempotent.
 #
-#   hack/talos-apply-worker.sh lab-test 192.168.10.58 [--dir DIR]
+#   image/scripts/talos-apply-worker.sh lab-test 192.168.10.58 [--dir DIR]
 #
-# Expects hack/talos-gen-config.sh and hack/talos-apply-bootstrap.sh to have run
+# Expects image/scripts/talos-gen-config.sh and image/scripts/talos-apply-bootstrap.sh to have run
 # for the cluster (needs $DIR/worker.yaml, $DIR/talosconfig, $DIR/kubeconfig).
 set -euo pipefail
 

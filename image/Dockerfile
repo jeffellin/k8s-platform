@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# ellinj/talos-automation: tools + hack/ scripts to turn a Proxmox template into a Talos cluster.
+# ellinj/talos-automation: tools + image/scripts/ scripts to turn a Proxmox template into a Talos cluster.
 # Build from the repo root:   docker build -f image/Dockerfile -t ellinj/talos-automation:dev .
 # The platform layer (bootstrap/bootstrap.sh, render.py, clusters.yaml) is NOT baked in:
 # jobs `git clone` the repo at run time so the image does not need rebuilding for app changes.
@@ -57,7 +57,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl jq git age netcat-openbsd openssl python3 python3-yaml \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=tools /dl/talosctl /dl/kubectl /dl/yq /dl/sops /dl/flux /usr/local/bin/
-COPY hack/clone-talos-vm.sh hack/talos-gen-config.sh hack/talos-apply-bootstrap.sh hack/talos-apply-worker.sh hack/cluster-up.sh /usr/local/bin/
+# Everything in image/scripts/ ships in the image (operator CLI tools belong in hack/); the scripts call each other by name via PATH.
+COPY image/scripts/ /usr/local/bin/
 RUN useradd --uid 10001 --create-home --shell /bin/bash bootstrapper \
  && mkdir /work && chown bootstrapper /work \
  && talosctl version --client >/dev/null && kubectl version --client >/dev/null \

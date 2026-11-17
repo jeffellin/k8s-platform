@@ -6,7 +6,7 @@
 #   CLUSTER_NAME   e.g. lab-test
 #   CP_IP          control-plane IP, e.g. 192.168.10.57 (VM ID is derived from it)
 #   WORKER_IPS     optional, comma-separated worker IPs (empty = single node, control plane schedulable)
-#   PVE_ENDPOINT, PVE_TOKEN_ID, PVE_TOKEN_SECRET   Proxmox API (see hack/clone-talos-vm.sh)
+#   PVE_ENDPOINT, PVE_TOKEN_ID, PVE_TOKEN_SECRET   Proxmox API (see image/scripts/clone-talos-vm.sh)
 #   NAMESPACE      optional; defaults to the pod's namespace. Talos secrets/kubeconfig are stored here.
 #   WORKDIR        optional; default /work
 #
