@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
 - demo1.yaml
 - mcp-demos.yaml
+- longhorn-test.yaml

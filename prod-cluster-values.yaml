@@ -1,0 +1,16 @@
+roles: kube,app,discovery
+authToken: 392fa1a9b82f22de40c6b790a674a380
+proxyAddr: solitary-pine.beams.sh:443
+kubeClusterName: mcp-demos
+labels:
+    teleport.internal/resource-id: 772f5899-05f5-41e6-9201-0f1b36ef9672
+
+enterprise: true
+updater:
+    enabled: true
+    releaseChannel: "stable/cloud"
+highAvailability:
+    replicaCount: 2
+    podDisruptionBudget:
+        enabled: true
+        minAvailable: 1

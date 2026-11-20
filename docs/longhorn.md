@@ -14,6 +14,9 @@ It replaces the earlier hand-made version in `ellin-gitops/infra-pre/longhorn` (
      options:
        longhorn_replicas: "2"                 # 1 single worker, 2 two workers, 3 for 3+ (default 2)
        longhorn_data_path: /var/mnt/longhorn  # default; see "Data disk" for existing clusters
+       longhorn_replenishment_wait: "900"     # seconds before rebuilding a failed replica elsewhere (default 900 = 15 min)
+       longhorn_rebuild_limit: "2"            # concurrent replica rebuilds per node (default 2)
+       longhorn_node_drain_policy: block-if-contains-last-replica   # default; see "Drains and scale-down"
    ```
 3. `hack/render.py`, commit, PR. Longhorn becomes the cluster's default StorageClass.
 
@@ -68,9 +71,10 @@ The Sidero Labs Longhorn guide does not mention it. We do not know which is righ
 | `storageReservedPercentageForDefaultDisk` / `storageMinimalAvailablePercentage` | 10 / 15 (defaults 30 / 25) | The data disk is dedicated; the OS is on its own disk. The defaults would leave about 20 of 50 GB usable. |
 | `defaultDataLocality`, `persistence.defaultDataLocality` | `best-effort` | Keep one replica on the node that runs the pod. Some nodes have a slow link to the storage backend (`pve` to TrueNAS). |
 | `replicaAutoBalance` | `least-effort` | Spread replicas onto a worker added later (scale-up). |
-| `concurrentReplicaRebuildPerNodeLimit` | 2 (default 5) | Rebuilds over a slow link otherwise starve the workloads. |
+| `concurrentReplicaRebuildPerNodeLimit` (`longhorn_rebuild_limit`) | 2 (Longhorn default 5) | Rebuilds over a slow link otherwise starve the workloads. |
+| `replicaReplenishmentWaitInterval` (`longhorn_replenishment_wait`) | 900 s = 15 min (Longhorn default 600) | A node that comes back within 15 min (reboot, Talos upgrade) reuses its replica instead of triggering a full rebuild over a slow link. |
 | `allowVolumeCreationWithDegradedAvailability` | `false` | Docs recommend off outside testing: a volume is not created without its replicas. |
-| `nodeDrainPolicy` | `block-if-contains-last-replica` (default) | See "Drains and scale-down". |
+| `nodeDrainPolicy` (`longhorn_node_drain_policy`) | `block-if-contains-last-replica` (Longhorn default) | Overridable per cluster. See "Drains and scale-down". |
 | `csi.allowControllerSecretAccess` | `false` | We use no encrypted volumes or Secret-backed parameters; drops the chart's cluster-wide read of Secrets for the CSI account. |
 | `preUpgradeChecker.jobEnabled` | `false` | The chart says to disable it with Argo CD or other GitOps controllers. |
 | HelmRelease timeouts | install 15 m, retries forever | Many large images on a slow link (backlog F20). |
@@ -81,6 +85,8 @@ The chart was rendered with `helm template --kube-version 1.37.1` using these va
 **Important:** `defaultSettings` are only read when Longhorn is first installed. After that, change settings in the Longhorn UI or the `settings.longhorn.io` objects; editing this file will not change a running cluster's settings.
 
 ## Drains and scale-down (F1)
+
+The policy is the option `longhorn_node_drain_policy` (default `block-if-contains-last-replica`). `allow-if-replica-is-stopped` lets a drain pass once the node's replicas are stopped (volumes detached), even if one is the last healthy replica: fine for a reboot or upgrade, but **an F1 scale-down then resets and removes the node and that replica is lost**. Use it only on clusters where every volume has replicas on other nodes, or follow the runbook scale-down steps first.
 
 Longhorn disables scheduling on a cordoned node. With `block-if-contains-last-replica`, a drain is blocked while the node holds the last healthy replica of a volume, so the F1 scale-down Job would exit 4 (drain blocked) until replicas are elsewhere.
 

@@ -1,0 +1,12 @@
+# Created by hack/new-talos-cluster.sh. Teardown: kubectl annotate taloscluster longhorn-test platform.ellin.net/teardown=true,
+# wait for PHASE=TornDown, delete the object, then hack/new-talos-cluster.sh --remove longhorn-test.
+apiVersion: platform.ellin.net/v1alpha1
+kind: TalosCluster
+metadata: {name: longhorn-test, namespace: default}
+spec:
+  node: pve2
+  storage: truenas-fast-storage
+  network:
+    controlPlaneIP: 192.168.10.64
+    workerIPs: [192.168.10.65, 192.168.10.66, 192.168.10.67]
+  workers: {count: 3}

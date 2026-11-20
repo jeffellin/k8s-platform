@@ -2,6 +2,9 @@
 # Per-cluster options (clusters.yaml, app `longhorn`, `options:`), all optional:
 #   longhorn_replicas    replicas per volume: 1 for a single-worker cluster, 2 for 2 workers, 3 for 3 or more   (default 2)
 #   longhorn_data_path   where the data disk is mounted on the node                                              (default /var/mnt/longhorn)
+#   longhorn_replenishment_wait   seconds to wait for a failed replica to come back before rebuilding a new one   (default 900 = 15 min)
+#   longhorn_rebuild_limit        concurrent replica rebuilds per node                                            (default 2)
+#   longhorn_node_drain_policy    nodeDrainPolicy (see the comment at the setting)                                (default block-if-contains-last-replica)
 # NOTE: `defaultSettings` are only read when Longhorn is first installed; later changes go through the Longhorn UI or the settings.longhorn.io objects.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -43,12 +46,14 @@ spec:
       storageMinimalAvailablePercentage: 15
       defaultDataLocality: best-effort
       replicaAutoBalance: least-effort                # spread replicas onto a worker that was added later (scale-up)
-      concurrentReplicaRebuildPerNodeLimit: 2         # default 5; rebuilds over a slow iSCSI link starve the workloads
+      concurrentReplicaRebuildPerNodeLimit: ${longhorn_rebuild_limit:-2}   # Longhorn default 5; rebuilds over a slow iSCSI link starve the workloads
+      replicaReplenishmentWaitInterval: ${longhorn_replenishment_wait:-900}   # seconds (Longhorn default 600); a node back within 15 min reuses its replica instead of a full rebuild
       allowVolumeCreationWithDegradedAvailability: false   # docs recommend off outside testing: a volume is not created without its replicas
-      # nodeDrainPolicy stays block-if-contains-last-replica (the default): a drain, and so the F1 scale-down, is refused while the node holds the
-      # last healthy replica of a volume. With 2+ replicas on 2+ workers it passes. block-for-eviction-if-contains-last-replica would evacuate replicas
-      # automatically first; decide when F1 is taught about Longhorn (docs/longhorn.md).
-      nodeDrainPolicy: block-if-contains-last-replica
+      # nodeDrainPolicy default block-if-contains-last-replica (Longhorn's default): a drain, and so the F1 scale-down, is refused while the node holds
+      # the last healthy replica of a volume. With 2+ replicas on 2+ workers it passes. Override per cluster with longhorn_node_drain_policy, e.g.
+      # allow-if-replica-is-stopped (drain once volumes are detached; loses the last replica if the node is then removed) or
+      # block-for-eviction-if-contains-last-replica (evacuate such replicas first). See docs/longhorn.md, "Drains and scale-down".
+      nodeDrainPolicy: ${longhorn_node_drain_policy:-block-if-contains-last-replica}
     csi:
       allowControllerSecretAccess: false              # we use no encrypted volumes or secret-backed parameters; drops cluster-wide read of Secrets
     preUpgradeChecker:
