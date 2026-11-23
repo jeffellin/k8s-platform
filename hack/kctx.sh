@@ -10,7 +10,7 @@
 #   kctx -l           list clusters (local kubeconfigs, marking the current one)
 #   kctx -u           unset KUBECONFIG and TALOSCONFIG (back to ~/.kube/config)
 #   kctx -p           prune local _talos/<name> dirs with no apps/talos-clusters/<name>.yaml in the repo (asks first; offline)
-#   kctx -p --live    same, but compare with the TalosClusters on the manager (needs it reachable); lab-manager is never pruned
+#   kctx -p --live    same, but compare with the TalosClusters on the manager (needs it reachable), and fetch the ones with no local kubeconfig
 #
 # Also sets $TALOSCONFIG to _talos/<name>/talosconfig when it exists (so `talosctl health` etc. target the selected
 # cluster); otherwise TALOSCONFIG is unset so talosctl never talks to the previous cluster. A missing talosconfig is
@@ -108,17 +108,35 @@ _kctx_prune() {
     [ -n "$n" ] && [ "$n" != lab-manager ] || continue
     printf '%s\n' "$known" | grep -qxF -- "$n" || stale+=("$n")
   done < <(_kctx_list)
-  [ ${#stale[@]} -gt 0 ] || { echo "kctx: nothing to prune"; return 0; }
-  printf 'kctx: no matching cluster for:\n'; printf '  %s\n' "${stale[@]}"
-  local ans; read -r -p "delete these directories under $KCTX_DIR? [y/N] " ans
-  case "$ans" in
-    y|Y) for n in "${stale[@]}"; do
-           [[ "$n" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] && rm -rf -- "${KCTX_DIR:?}/$n" && echo "kctx: removed $n"
-         done
-         [ -n "${KCTX_PREV:-}" ] && [ ! -d "$KCTX_DIR/$KCTX_PREV" ] && unset KCTX_PREV
-         return 0 ;;
-    *) echo "kctx: nothing deleted" ;;
-  esac
+  if [ ${#stale[@]} -eq 0 ]; then
+    echo "kctx: nothing to prune"
+  else
+    printf 'kctx: no matching cluster for:\n'; printf '  %s\n' "${stale[@]}"
+    local ans; read -r -p "delete these directories under $KCTX_DIR? [y/N] " ans
+    case "$ans" in
+      y|Y) for n in "${stale[@]}"; do
+             [[ "$n" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] && rm -rf -- "${KCTX_DIR:?}/$n" && echo "kctx: removed $n"
+           done
+           [ -n "${KCTX_PREV:-}" ] && [ ! -d "$KCTX_DIR/$KCTX_PREV" ] && unset KCTX_PREV ;;
+      *) echo "kctx: nothing deleted" ;;
+    esac
+  fi
+  # --live also brings in clusters the manager knows about that have no local kubeconfig (does not switch cluster)
+  if [ "$live" = 1 ]; then
+    local have; have="$(_kctx_list)"
+    while read -r n; do
+      [[ "$n" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] && [ "$n" != lab-manager ] || continue
+      printf '%s\n' "$have" | grep -qxF -- "$n" && continue
+      echo "kctx: fetching missing cluster $n..."
+      if "$_KCTX_ROOT/hack/get-kubeconfig.sh" "$n" --manager-kubeconfig "$mk" >/dev/null; then
+        echo "kctx: added $n"
+        "$_KCTX_ROOT/hack/get-kubeconfig.sh" "$n" --talosconfig --manager-kubeconfig "$mk" >/dev/null 2>&1 || echo "kctx: no talosconfig for $n (best effort)" >&2
+      else
+        echo "kctx: could not fetch $n (still being built?)" >&2
+      fi
+    done <<< "$known"
+  fi
+  return 0
 }
 
 kctx() {
