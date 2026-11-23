@@ -244,6 +244,41 @@ The cluster does not have to exist for steps 1-5; the keys do not depend on it.
 - Removing a cluster: removing it from Git while it is live may make its Flux prune what it applied. Treat decommissioning as a deliberate step (tear down or wipe the cluster
   first) and verify the behaviour on a throwaway cluster before relying on it. There is no `--remove` for the SOPS path.
 
+## 5. Back up and restore the `lab-manager` secrets
+
+Some secrets exist only on the machine that built `lab-manager` and are **not in Git**. Back them up to the MinIO S3 (`s3.ellin.net`, bucket `terraform-homelab`, prefix `lab-manager-secrets/`), encrypted with a passphrase. Issue #89.
+
+**What is backed up** (`hack/backup-lab-manager-secrets.sh`):
+- `~/.config/sops/age/keys.txt`: the **admin age key**. It is a recipient of every SOPS file in Git; without it you cannot edit or re-encrypt them.
+- `~/.config/sops/age/*.agekey`: the cluster keys (`lab-manager.agekey` decrypts `lab-manager`'s secrets; the old test clusters' keys come along and are harmless).
+- `_talos/lab-manager/secrets.yaml`: the cluster's Talos PKI and tokens. **This is the one irreplaceable cluster file**; `talos-gen-config.sh` never overwrites it.
+- `_talos/lab-manager/talosconfig`: kept for convenience. `controlplane.yaml`, `patch.yaml` and `kubeconfig` are not backed up because they regenerate from `secrets.yaml` and the script (kubeconfig from the running cluster).
+
+**Back up** (interactive: `age` asks for a passphrase twice; **store it in 1Password at once**, there is no recovery):
+```bash
+export AWS_ACCESS_KEY_ID=<minio key> AWS_SECRET_ACCESS_KEY=<minio secret>   # the MinIO credentials, not the Route53 ones
+hack/backup-lab-manager-secrets.sh        # AWS_CA_BUNDLE=/path/ca.pem if the MinIO certificate is private
+```
+The object is named `lab-manager-secrets-<date>.tar.gz.age`; a second run on the same day overwrites it. Delete older ones once a restore of the newest has been tested.
+
+**Check the contents** (nothing is written to disk):
+```bash
+aws --endpoint-url https://s3.ellin.net s3 cp s3://terraform-homelab/lab-manager-secrets/<file>.tar.gz.age - | age -d | tar -tzvf -
+```
+Expect `keys.txt`, the `*.agekey` files, `secrets.yaml` and `talosconfig`.
+
+**Restore** into a throwaway directory first, then copy files back:
+```bash
+d=$(mktemp -d) && chmod 700 "$d"
+aws --endpoint-url https://s3.ellin.net s3 cp s3://terraform-homelab/lab-manager-secrets/<file>.tar.gz.age - | age -d | tar -xzf - -C "$d"
+# age keys -> ~/.config/sops/age/ (mode 600); secrets.yaml and talosconfig -> _talos/lab-manager/
+rm -rf "$d"        # it holds plaintext keys
+```
+
+**Recreate the cluster's identity** from `secrets.yaml`: put it in `_talos/lab-manager/`, run `image/scripts/talos-gen-config.sh lab-manager <controlPlaneIP>` (it keeps the existing `secrets.yaml` and regenerates `controlplane.yaml`, `patch.yaml` and `talosconfig`), apply and bootstrap, then fetch a new kubeconfig. The restored cluster has the same Talos identity, so existing `talosctl` clients keep working.
+
+**Not covered** by this backup: etcd data (Flux and the XRs in Git rebuild the platform and the clusters, but anything created by hand on the manager is gone); the Secrets that exist only on the manager (`proxmox-token`, `aws-credentials` and every child cluster's `<name>-talos-secrets`, `-talosconfig`, `-kubeconfig`, `-age-key`), which need VM snapshots or a re-seed (#65). A full restore has not been tested end to end.
+
 ## Troubleshooting
 
 | Symptom | Look at | Likely cause / fix |
