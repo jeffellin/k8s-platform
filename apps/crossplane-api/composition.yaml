@@ -35,9 +35,9 @@ spec:
           {{- $px := $env.proxmox -}}
           {{- $name := $xr.metadata.name -}}
           {{- /* Job pod templates are immutable: bump $rev whenever a talos/verify/platform Job spec changes so Crossplane recreates the Jobs (all scripts are idempotent). */ -}}
-          {{- $rev := "r4" -}}
+          {{- $rev := "r5" -}}
           {{- /* The platform Job has its own revision so a change to it re-runs only that (idempotent) layer, not talos/verify, on live clusters. */ -}}
-          {{- $prev := "p2" -}}
+          {{- $prev := "p3" -}}
           {{- $teardown := eq (dig "metadata" "annotations" "platform.ellin.net/teardown" "" $xr) "true" -}}
           {{- $node := $xr.spec.node | default $px.defaultNode -}}
           {{- $nodeCfg := index $px.nodes $node -}}
