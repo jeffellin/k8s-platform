@@ -1,7 +1,7 @@
 # Runbook: Crossplane-built Talos clusters
 
 Create, update and delete a Crossplane-built Talos cluster (sections 1-3), and onboard any other cluster by the SOPS path (section 4), with what exists today (as of 2026-11-09: backlog epics A-E, F3, F4 done).
-Design background: `docs/crossplane-cluster-lifecycle.md` (D15 and section 8.1 for teardown). Open work: `docs/crossplane-backlog.md`.
+Design background: `docs/crossplane-cluster-lifecycle.md` (D15 and section 8.1 for teardown). Open work: the GitHub issues (label `post-mvp`); history and decisions: `docs/design-decisions.md`.
 
 ## How it fits together
 
