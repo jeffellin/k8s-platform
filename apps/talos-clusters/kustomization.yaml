@@ -6,3 +6,4 @@ resources:
 - longhorn-test.yaml
 - cloudinit.yaml
 - longhorn-test2.yaml
+- test2.yaml
