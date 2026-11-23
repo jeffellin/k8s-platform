@@ -41,7 +41,7 @@ data:
   talos:
     version: v1.14.5
     schematic: 88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
-    image: ellinj/talos-automation:dev
+    image: ghcr.io/jeffellin/talos-automation:129d8c0
   git:                           # repo the new cluster's Flux syncs (clusters/<name>/ must already be committed)
     url: https://github.com/jeffellin/k8s-platform.git
     branch: main

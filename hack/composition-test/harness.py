@@ -24,7 +24,7 @@ def xr(version='v1.14.5', status=None, annotations=None):
     return x
 def done(): return {'resource':{'status':{'atProvider':{'manifest':{'status':{'succeeded':1}}}}}}
 def render(which, x, vms_ready=True):
-    obs={('vm-demo1-cp-1-r3' if which=='old' else 'vm-demo1-cp-1-r4'):done()} if vms_ready else {}
+    obs={('vm-demo1-cp-1-r3' if which=='old' else 'vm-demo1-cp-1-r5'):done()} if vms_ready else {}
     inp={'observed':{'composite':{'resource':x},'resources':obs},'context':{'apiextensions.crossplane.io/environment':env}}
     open(S+'/in.json','w').write(json.dumps(inp))
     p=subprocess.run([HERE+'/render',S+f'/{which}.tmpl',S+'/in.json'],capture_output=True,text=True)
@@ -67,12 +67,12 @@ diff=[k for k in jo if jo[k]!=job.get(k)]
 check('B2 OLD composition + bump changes Jobs (confirms the problem)', len(diff)>0, str(diff))
 # C: brand-new cluster at v1.14.6 uses template 9101
 c,e=render('new',xr('v1.14.6'),vms_ready=False); jc=jobs(c)
-vm=jc['vm-demo1-cp-1-r4']['spec']['template']['spec']['containers'][0]['env']
+vm=jc['vm-demo1-cp-1-r5']['spec']['template']['spec']['containers'][0]['env']
 tid=[x['value'] for x in vm if x['name']=='TEMPLATE_ID'][0]
 check('C  new v1.14.6 cluster clones template 9101', tid=='9101', tid)
 check('C  status createdTalosVersion v1.14.6', status(c)['createdTalosVersion']=='v1.14.6')
 # A2: template used for the unchanged case
-vm=jn['vm-demo1-cp-1-r4']['spec']['template']['spec']['containers'][0]['env']
+vm=jn['vm-demo1-cp-1-r5']['spec']['template']['spec']['containers'][0]['env']
 tid=[x['value'] for x in vm if x['name']=='TEMPLATE_ID'][0]
 check('A  v1.14.5 cluster clones template 9100', tid=='9100', tid)
 # D: missing template -> clear failure
@@ -84,7 +84,7 @@ check('E  teardown not blocked by a missing template', t is not None and any('te
 
 # ---- F2 upgrade layer ----
 def obs_built(extra=None):
-    o={k:done() for k in ['vm-demo1-cp-1-r4','talos-demo1-r4','verify-demo1-r4','platform-demo1-p2']}
+    o={k:done() for k in ['vm-demo1-cp-1-r5','talos-demo1-r5','verify-demo1-r5','platform-demo1-p3']}
     o.update(extra or {}); return o
 def render_obs(which, x, obs):
     inp={'observed':{'composite':{'resource':x},'resources':obs},'context':{'apiextensions.crossplane.io/environment':env}}
@@ -115,7 +115,7 @@ check('U3 succeeded: status.talosVersion v1.14.6, phase Ready, Object still rend
 u4,e=render_obs('new',xr('v1.14.6',{'createdTalosVersion':'v1.14.5','talosVersion':'v1.14.6'}),obs_built({UP:done()}))
 check('U4 settled: upgrade Object dropped, status stays v1.14.6', UP not in jobs(u4) and status(u4)['talosVersion']=='v1.14.6' and status(u4)['phase']=='Ready')
 # U5/U7: platform not finished
-partial={k:done() for k in ['vm-demo1-cp-1-r4','talos-demo1-r4']}
+partial={k:done() for k in ['vm-demo1-cp-1-r5','talos-demo1-r5']}
 u5,e=render_obs('new',xr('v1.14.6',base_status),partial)
 check('U5 bump while the cluster is still being built: no upgrade yet', UP not in jobs(u5))
 u7,e=render_obs('new',xr('v1.14.6',base_status),{**partial,UP:{}} | {UP:{'resource':{'status':{}}}})
@@ -125,7 +125,7 @@ u6,e=render_obs('new',xr('v1.14.6',base_status),obs_built({UP:{'resource':{'stat
 c=cond(u6,'Upgrading'); check('U6 failed: UpgradeFailed with a hint', c['reason']=='UpgradeFailed' and 'delete that Job' in c.get('message',''))
 # U8: cluster with workers gets the worker IPs
 xw=xr('v1.14.6',base_status); xw['spec']['network']['workerIPs']=['192.168.10.58','192.168.10.59']; xw['spec']['workers']={'count':2}
-ow=obs_built({k:done() for k in ['vm-demo1-w-1-r4','vm-demo1-w-2-r4']})
+ow=obs_built({k:done() for k in ['vm-demo1-w-1-r5','vm-demo1-w-2-r5']})
 u8,e=render_obs('new',xw,ow); j8=jobs(u8)
 check('U8 workers: WORKER_IPS passed', UP in j8 and {x['name']:x['value'] for x in j8[UP]['spec']['template']['spec']['containers'][0]['env']}['WORKER_IPS']=='192.168.10.58,192.168.10.59')
 # U9: demo1 case: no status.talosVersion yet (falls back to the creation version)
@@ -136,7 +136,7 @@ ut,e=render_obs('new',xr('v1.14.6',base_status,annotations={'platform.ellin.net/
 check('U10 teardown: no upgrade Object', not any(k.startswith('upgrade-') for k in jobs(ut)))
 
 # ---- clone type ----
-def clone_env(docs, x_name='vm-demo1-cp-1-r4'):
+def clone_env(docs, x_name='vm-demo1-cp-1-r5'):
     return {e['name']:e['value'] for e in jobs(docs)[x_name]['spec']['template']['spec']['containers'][0]['env']}
 c1,e=render('new',xr('v1.14.5'),vms_ready=False); ce=clone_env(c1)   # brand-new cluster, EnvironmentConfig default
 check('T1 default: CLONE_TYPE linked (EnvironmentConfig vm.cloneType)', ce.get('CLONE_TYPE')=='linked', str(ce.get('CLONE_TYPE')))
