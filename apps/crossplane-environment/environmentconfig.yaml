@@ -23,7 +23,6 @@ data:
           v1.14.5: 9100
       pve2:
         storage: truenas-fast-storage   # must be shared: Proxmox rejects a cross-node clone (template is owned by pve) onto local-lvm
-        cloudInitStorage: local-lvm     # cloud-init drive stays local: Proxmox cannot write the ISO to the truenasplugin iSCSI LUN at start
         bridge: vmbr1                   # verified: vmbr1 on pve2 has the VLAN 10 uplink (nic0.10)
         templates:
           v1.14.5: 9102          # full clone of 9100 on shared storage (owned by node pve; TEMPLATE_NODE defaults to pve)
@@ -37,6 +36,7 @@ data:
     memoryMiB: 8192
     systemDiskGiB: 64
     dataDiskGiB: 50
+    cloudInitStorage: cloud-init-shared   # shared LVM on iSCSI (1G LUN, VG vg-cloudinit): keeps VMs migratable. Per node: nodes.<n>.cloudInitStorage; per cluster: spec.cloudInitStorage. (Proxmox cannot write the cloud-init ISO to the truenasplugin LUN, hence a separate storage.)
     cloneType: linked            # linked | full (per cluster: spec.cloneType). Linked clones need a template on the target storage; otherwise the clone Job falls back to full.
   talos:
     version: v1.14.5

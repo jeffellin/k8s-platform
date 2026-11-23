@@ -47,7 +47,7 @@ spec:
           {{- $createdVersion := dig "status" "createdTalosVersion" $xr.spec.talosVersion $xr -}}
           {{- $tmpl := index $nodeCfg.templates $createdVersion -}}
           {{- $storage := $xr.spec.storage | default $nodeCfg.storage -}}
-          {{- $ciStorage := $nodeCfg.cloudInitStorage | default "" -}}
+          {{- $ciStorage := $xr.spec.cloudInitStorage | default $nodeCfg.cloudInitStorage | default (dig "vm" "cloudInitStorage" "" $env) | default "" -}}
           {{- /* linked (default) or full: spec.cloneType, else the EnvironmentConfig's vm.cloneType. Only affects VMs cloned afterwards. */ -}}
           {{- $cloneType := $xr.spec.cloneType | default (dig "vm" "cloneType" "" $env) | default "linked" -}}
           {{- $nodes := list -}}
