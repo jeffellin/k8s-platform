@@ -5,3 +5,4 @@ resources:
 - mcp-demos.yaml
 - longhorn-test.yaml
 - cloudinit.yaml
+- longhorn-test2.yaml
