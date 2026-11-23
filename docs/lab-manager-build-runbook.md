@@ -19,7 +19,7 @@ clusters. This runbook builds one **from nothing** (Part A: the Talos node) and 
 - On the Pi: `talosctl` v1.14.5, `yq`, `kubectl`, `age`, `sops`, `jq`, `op` (1Password CLI, signed in), `gh`; SSH key in an agent for pushing
   (`op read "op://HomeLab/Github/private key?ssh-format=openssh" | ssh-add -`).
 - 1Password: `op://HomeLab/r53-aws` (Route53 keys: `access key id`, `secret access key`) exists. The item named **`Proxmox API Token` is NOT the `talos-provisioner` token**: it was created 2026-08-24, before that token (2026-11-08), and does not mention it. The `talos-provisioner` secret is, as far as I can verify, only in the `proxmox-token` Secret on the running manager.
-- Docker Hub image `ellinj/talos-automation:dev` pushed (the Jobs use it); the Docker Hub workflow only runs from `main` with repo secrets set (backlog C2).
+- Image `ellinj/talos-automation:dev` (Docker Hub, hand-built) is what the Jobs use today; the workflow publishes `ghcr.io/jeffellin/talos-automation` from `main` with no secrets (issue #77), and the Jobs switch to it by changing `talos.image` in the EnvironmentConfig.
 - Git layout: since the plan branch was merged to `main` (2026-11-09) all scripts (`image/scripts/clone-talos-vm.sh`, `talos-gen-config.sh`, `talos-apply-bootstrap.sh`, `hack/render.py`, `hack/new-sops-cluster.sh`, `hack/seed-secrets.sh`) and `bootstrap/` are on `main`.
   Run everything from a checkout of `main` (or of the plan branch if it is up to date with `main`); `~/homelab/k8s-platform` holds the git-ignored `_talos/` directory.
 
