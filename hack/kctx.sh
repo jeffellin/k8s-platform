@@ -123,18 +123,21 @@ _kctx_prune() {
   fi
   # --live also brings in clusters the manager knows about that have no local kubeconfig (does not switch cluster)
   if [ "$live" = 1 ]; then
-    local have; have="$(_kctx_list)"
+    local have added=() failed=(); have="$(_kctx_list)"
     while read -r n; do
       [[ "$n" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] && [ "$n" != lab-manager ] || continue
       printf '%s\n' "$have" | grep -qxF -- "$n" && continue
       echo "kctx: fetching missing cluster $n..."
       if "$_KCTX_ROOT/hack/get-kubeconfig.sh" "$n" --manager-kubeconfig "$mk" >/dev/null; then
-        echo "kctx: added $n"
+        added+=("$n")
         "$_KCTX_ROOT/hack/get-kubeconfig.sh" "$n" --talosconfig --manager-kubeconfig "$mk" >/dev/null 2>&1 || echo "kctx: no talosconfig for $n (best effort)" >&2
       else
-        echo "kctx: could not fetch $n (still being built?)" >&2
+        failed+=("$n"); echo "kctx: could not fetch $n (still being built?)" >&2
       fi
     done <<< "$known"
+    if [ ${#added[@]} -gt 0 ]; then printf 'kctx: added %d cluster(s):\n' "${#added[@]}"; printf '  %s\n' "${added[@]}"
+    else echo "kctx: nothing to add (all ${live:+manager }clusters already have a local kubeconfig)"; fi
+    [ ${#failed[@]} -eq 0 ] || printf 'kctx: failed: %s\n' "${failed[*]}" >&2
   fi
   return 0
 }
