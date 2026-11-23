@@ -137,6 +137,24 @@ Example: a volume has 2 replicas and you remove a worker so only 1 is left. Repl
 
 The `demo2` test showed the failure above (removing a worker without these steps). Steps 2 to 4 were then run on `demo3` (2 workers to 1, volume with 2 replicas): the volume stayed `healthy`, the scale-down Job completed and the Longhorn node object for the removed worker was already gone, so step 5 was not needed after a clean eviction (keep it as a check: `kubectl -n longhorn-system get nodes.longhorn.io`). Before the eviction `hack/scale-down-check.sh` warns that the instance-manager PodDisruptionBudgets allow 0 disruptions; that clears once the node has no replicas. See `docs/longhorn.md`, "Trial results (`demo3`)".
 
+### Longhorn disk space: scheduling and deleted data
+
+A Longhorn volume is **thin on disk but counted at full size for scheduling**. Seen on `longhorn-test` (2026-11-21): a 1 GiB RWX PVC with 3 replicas used ~49 MiB per replica (`actualSize`, mostly ext4 metadata), while each worker's disk counted 1.0 GiB as scheduled.
+
+- **Disk usage:** each replica is a sparse file on the worker's data disk (`/var/mnt/longhorn`) that grows as data is written. A PVC of size S with R replicas uses at most S x R across the cluster, one copy per worker (plus snapshots, see below).
+- **Scheduling:** when placing a replica, Longhorn counts the PVC's **full requested size** against the node's disk, not what is written. A worker accepts new replicas until (a) the scheduled sizes reach `(disk size - 10% reserved) x storage-over-provisioning-percentage` (default 100%, so ~45 GiB of PVC sizes on a 50 GB disk), or (b) real free space drops below 15% (`storageMinimalAvailablePercentage`). Past either, new volumes or rebuilds fail with `ReplicaSchedulingFailure`. No overcommit unless the over-provisioning setting is raised (for example 200%) in the Longhorn UI (Setting → General) or `settings.longhorn.io storage-over-provisioning-percentage`; that only makes sense while real usage stays low, because a full disk stops every replica on it.
+- **Deleted data is not given back by itself:** deleting files inside the volume does not shrink the replicas; the blocks are freed only after a filesystem trim. Run it from the UI (Volume → the volume → Trim Filesystem; the volume must be attached) or as a Longhorn recurring job of type `filesystem-trim`. RWX volumes, the share-manager's NFS mount, and `volumeMode: Block` behave differently; check the Longhorn docs before relying on trim there.
+- **Snapshots hold space:** each snapshot keeps the blocks changed since the one before, and a trim cannot free blocks a snapshot still references. No recurring snapshot jobs are configured, so this only matters for snapshots taken by hand: delete old ones in the UI.
+
+Check usage (cluster's own kubeconfig):
+
+```bash
+# PVC size vs what is actually written, per volume
+kubectl -n longhorn-system get volumes.longhorn.io -o custom-columns=NAME:.metadata.name,SIZE:.spec.size,ACTUAL:.status.actualSize,REPLICAS:.spec.numberOfReplicas
+# per worker disk: maximum, available, and scheduled (the sum of the PVC sizes placed there)
+kubectl -n longhorn-system get nodes.longhorn.io -o jsonpath='{range .items[*]}{.metadata.name}{range .status.diskStatus.*}{"  max="}{.storageMaximum}{" avail="}{.storageAvailable}{" scheduled="}{.storageScheduled}{end}{"\n"}{end}'
+```
+
 **Not supported yet: do not try**
 - **Reducing to 0 workers** (N -> 0): not supported; the control plane would need its taint removed again. Remove workers down to 1, or rebuild.
 - **Removed worker still listed by `talosctl health`**: the scale-down resets the node through the control plane (`talosctl -e <controlPlaneIP> -n <worker> reset`) so it leaves Talos discovery. If the reset fails on a node that still answers, the Job exits 5 and leaves the node and VM alone (fix it, delete the Job to retry). The platform's Talos layer also names its nodes explicitly for `talosctl health` (`WORKER_IPS`), which needs the `ellinj/talos-automation:dev` image rebuilt; until then a stale member can hold the health check for up to its 10 minute timeout.

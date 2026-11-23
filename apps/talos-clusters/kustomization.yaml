@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
 - mcp-demos.yaml
 - longhorn-test.yaml
+- cloudinit.yaml
