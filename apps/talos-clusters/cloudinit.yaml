@@ -3,6 +3,8 @@
 apiVersion: platform.ellin.net/v1alpha1
 kind: TalosCluster
 metadata:
+  annotations:
+    platform.ellin.net/teardown: "true"
   name: cloudinit
   namespace: default
 spec:

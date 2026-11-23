@@ -5,12 +5,10 @@ kind: TalosCluster
 metadata:
   name: longhorn-test2
   namespace: default
-  annotations:
-    platform.ellin.net/teardown: "true"
 spec:
   node: pve2
   storage: truenas-fast-storage
   network:
     controlPlaneIP: 192.168.10.70
-    workerIPs: [192.168.10.71, 192.168.10.72, 192.168.10.73]
-  workers: {count: 3}
+    workerIPs: [192.168.10.71]
+  workers: {count: 1}
