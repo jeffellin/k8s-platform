@@ -5,8 +5,6 @@ kind: TalosCluster
 metadata:
   name: cloudinit
   namespace: default
-  annotations:
-    platform.ellin.net/teardown: "true"
 spec:
   node: pve
   storage: local-lvm
