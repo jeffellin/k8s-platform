@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# ellinj/talos-automation: tools + image/scripts/ scripts to turn a Proxmox template into a Talos cluster.
-# Build from the repo root:   docker build -f image/Dockerfile -t ellinj/talos-automation:dev .
+# ghcr.io/jeffellin/talos-automation: tools + image/scripts/ scripts to turn a Proxmox template into a Talos cluster.
+# Build from the repo root:   docker build -f image/Dockerfile -t ghcr.io/jeffellin/talos-automation:dev .
 # The platform layer (bootstrap/bootstrap.sh, render.py, clusters.yaml) is NOT baked in:
 # jobs `git clone` the repo at run time so the image does not need rebuilding for app changes.
 

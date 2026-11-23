@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create a Talos cluster end to end: clone VMs -> gen config -> apply/bootstrap -> join workers.
-# Runs inside the ellinj/talos-automation image (as a Job) or by hand. Idempotent: safe to re-run.
+# Runs inside the ghcr.io/jeffellin/talos-automation image (as a Job) or by hand. Idempotent: safe to re-run.
 #
 # Env (all required unless noted):
 #   CLUSTER_NAME   e.g. lab-test
