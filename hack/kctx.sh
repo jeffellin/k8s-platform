@@ -9,6 +9,8 @@
 #   kctx -c           show the current cluster
 #   kctx -l           list clusters (local kubeconfigs, marking the current one)
 #   kctx -u           unset KUBECONFIG and TALOSCONFIG (back to ~/.kube/config)
+#   kctx -p           prune local _talos/<name> dirs with no apps/talos-clusters/<name>.yaml in the repo (asks first; offline)
+#   kctx -p --live    same, but compare with the TalosClusters on the manager (needs it reachable); lab-manager is never pruned
 #
 # Also sets $TALOSCONFIG to _talos/<name>/talosconfig when it exists (so `talosctl health` etc. target the selected
 # cluster); otherwise TALOSCONFIG is unset so talosctl never talks to the previous cluster. A missing talosconfig is
@@ -90,12 +92,42 @@ _kctx_pick() {
   [ -n "$choice" ] && _kctx_use "$choice"
 }
 
+# Prune stale local cluster dirs. Known = XR files in the repo (default) or TalosClusters on the manager (--live).
+_kctx_prune() {
+  local live=0 known n stale=() mk="${MANAGER_KUBECONFIG:-$KCTX_DIR/lab-manager/kubeconfig}"
+  case "${1:-}" in "") ;; --live) live=1 ;; *) echo "kctx: unknown -p option $1 (use --live)" >&2; return 2 ;; esac
+  if [ "$live" = 1 ]; then
+    command -v kubectl >/dev/null 2>&1 || { echo "kctx: kubectl not found" >&2; return 1; }
+    [ -f "$mk" ] || { echo "kctx: manager kubeconfig $mk not found" >&2; return 1; }
+    known="$(kubectl --kubeconfig "$mk" --request-timeout=10s get taloscluster -A -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')" \
+      || { echo "kctx: could not list TalosClusters on the manager; nothing pruned" >&2; return 1; }
+  else
+    known="$(for f in "$_KCTX_ROOT"/apps/talos-clusters/*.yaml; do [ -f "$f" ] && basename "$f" .yaml; done)"
+  fi
+  while read -r n; do
+    [ -n "$n" ] && [ "$n" != lab-manager ] || continue
+    printf '%s\n' "$known" | grep -qxF -- "$n" || stale+=("$n")
+  done < <(_kctx_list)
+  [ ${#stale[@]} -gt 0 ] || { echo "kctx: nothing to prune"; return 0; }
+  printf 'kctx: no matching cluster for:\n'; printf '  %s\n' "${stale[@]}"
+  local ans; read -r -p "delete these directories under $KCTX_DIR? [y/N] " ans
+  case "$ans" in
+    y|Y) for n in "${stale[@]}"; do
+           [[ "$n" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] && rm -rf -- "${KCTX_DIR:?}/$n" && echo "kctx: removed $n"
+         done
+         [ -n "${KCTX_PREV:-}" ] && [ ! -d "$KCTX_DIR/$KCTX_PREV" ] && unset KCTX_PREV
+         return 0 ;;
+    *) echo "kctx: nothing deleted" ;;
+  esac
+}
+
 kctx() {
   case "${1:-}" in
     "")        _kctx_pick ;;
-    -h|--help) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+    -h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
     -l)        local c; c="$(_kctx_current 2>/dev/null || true)"; _kctx_list | while read -r n; do [ "$n" = "$c" ] && echo "* $n" || echo "  $n"; done ;;
     -c)        _kctx_current || { echo "kctx: KUBECONFIG is not set (using ~/.kube/config)" >&2; return 1; } ;;
+    -p)        shift; _kctx_prune "$@" ;;
     -u)        unset KUBECONFIG TALOSCONFIG; echo "kctx: KUBECONFIG and TALOSCONFIG unset" ;;
     -)         [ -n "${KCTX_PREV:-}" ] && _kctx_use "$KCTX_PREV" || { echo "kctx: no previous cluster" >&2; return 1; } ;;
     -*)        echo "kctx: unknown option $1 (see kctx --help)" >&2; return 2 ;;
@@ -103,7 +135,7 @@ kctx() {
   esac
 }
 
-_kctx_complete() { COMPREPLY=( $(compgen -W "$(_kctx_list) -l -c -u -" -- "${COMP_WORDS[COMP_CWORD]}") ); }
+_kctx_complete() { COMPREPLY=( $(compgen -W "$(_kctx_list) -l -c -u -p -" -- "${COMP_WORDS[COMP_CWORD]}") ); }
 complete -F _kctx_complete kctx 2>/dev/null || true
 
 # Run directly (hack/kctx.sh ...) instead of sourced: a child process cannot set your shell's KUBECONFIG, so say so instead of silently doing nothing.
