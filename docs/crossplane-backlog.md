@@ -23,7 +23,7 @@ Jeff closed the MVP on 2026-11-16. A `TalosCluster` in Git produces a working Ta
 | Rolling in-place Talos upgrades (single node, multi-node, nothing-to-do case) | F2 |
 | Placement and storage per cluster, kubeconfig tooling | `spec.node`, `spec.storage`, `hack/get-kubeconfig.sh`, `hack/kctx.sh` |
 
-**Open, all POST-MVP:** F9 (one-step delete), F11 (rebuild the manager), F14 (verify the untested teardown paths), F15 (housekeeping, including the Docker Hub secrets), C2 (image pipeline, failing without those secrets), F16 and F24 (PR checks and the validation umbrella), F19 (placement moves), F22 (Longhorn follow-ups), F25 (Kubernetes upgrade), F26 (etcd snapshot, S3), F27 (template runbook, default version), F28 (live test of the upgrade failure paths), F29 (namespaces for XRs and Jobs), F30 (configure `pve3`), F31 (per-role storage and node), A5 (optional `vmbr1` netmask).
+**Open, all POST-MVP:** F9 (one-step delete), F11 (rebuild the manager), F14 (verify the untested teardown paths), F15 (housekeeping, including the Docker Hub secrets), C2 (image pipeline, failing without those secrets), F16 and F24 (PR checks and the validation umbrella), F19 (placement moves), F22 (Longhorn follow-ups), F25 (Kubernetes upgrade), F26 (etcd snapshot, S3), F27 (template runbook, default version), F28 (live test of the upgrade failure paths), F29 (namespaces for XRs and Jobs), F30 (configure `pve3`), F31 (per-role storage and node), F32 (parallel clones race on TrueNAS LUN IDs), A5 (optional `vmbr1` netmask).
 **Shelved or deprioritized:** F5, F8, F10, F18, F21. **Closed:** F6, F7.
 
 ---
@@ -262,6 +262,7 @@ As the Jobs, I need one image with the tools.
 | F29 | XRs outside `default`; Jobs in the cluster's namespace | M-L | Not done | post-MVP; needs a design session. Issue #75. |
 | F30 | Configure `pve3` as a Talos node | S | Not done | post-MVP. Added 2026-11-17. No GitHub issue yet. |
 | F31 | Per-role storage and node at creation | M | Not done | post-MVP. Split out of F19 on 2026-11-17. No GitHub issue yet. |
+| F32 | Parallel clones race on TrueNAS LUN IDs | S-M | Not done | post-MVP. Found 2026-11-23 on `longhorn-test2`. Issue #86. |
 
 9 done, 1 partly done, 12 not done, 5 shelved, 2 closed.
 
@@ -304,6 +305,8 @@ Order: rename on GitHub first (GitHub redirects the old URL for web, `git` and P
 **F6. Backups of `lab-manager`** (S) **CLOSED 2026-11-12 (Jeff)**: **plan (Jeff, 2026-11-09): Proxmox VM snapshots of VM 10056** (its etcd and the manager-side Secrets live on that VM's disks). Open: snapshot schedule/retention, who runs it (Proxmox backup job vs script), and a tested restore. An etcd snapshot (`talosctl etcd snapshot`) is an optional extra. Demo: a restored snapshot boots a working manager.
 
 ---
+
+**F32. Parallel clones race on TrueNAS LUN IDs** **POST-MVP (Jeff, 2026-11-23: open, not started)** (S-M): found on `longhorn-test2` (1 control plane + 3 workers on `pve2`, disks on `truenas-fast-storage`). All four clone Jobs started in the same second and the `truenasplugin` gave **LUN 34 to two extents** (`vm-10070-disk-0` and `vm-10072-disk-0`) on the `fast-proxmox` target. TrueNAS cannot serve two extents at one ID, so the node never got a `lun-34` device and the VM start task failed after 600 retries (`Could not locate by-path device for LUN 34`); all four clone Jobs ended `Failed` and the XR stayed in `VMsCreating`. The start task's log begins with "generating cloud-init ISO", which looks like a cloud-init problem but is not (the drives had already moved to `cloud-init-shared`; no `vm-<id>-cloudinit` zvols were left). **Cause (best explanation, not proven):** the plugin picks a LUN ID per zvol without locking across calls, and each VM allocates several LUNs (two disks, plus a temporary cloud-init zvol from the template clone), so a 4-VM cluster has many overlapping allocations; smaller clusters probably got lucky. Not caused by `spec.cloudInitStorage` (PR #85): the clone, move, start order is unchanged. **To do:** (1) serialize clones that allocate on a plugin storage (one clone Job at a time or a stagger, or a lock in `clone-talos-vm.sh`; decide whether it must also hold across clusters); (2) before `start`, check for a duplicate LUN ID on the VM's disks (TrueNAS target extent list) or that each disk's `by-path` device exists on the target node after an `iscsiadm --rescan`, and fail with a clear condition instead of the 600-retry timeout; (3) optional: wait and rescan before starting; (4) report upstream to the `truenasplugin` maintainers; (5) runbook: how to recognise it (duplicate LUN ID in the target's extent list) and the manual fix (change one extent's LUN ID to an unused one in TrueNAS, rescan the node, delete the failed clone Jobs so Crossplane recreates them). Related: F19 (placement), F31 (per-role storage). Demo: a cluster with 1 control plane and 3 or more workers on the NAS storage reaches `VMsReady` with no duplicate LUN IDs, repeated several times.
 
 ## Suggested first sprint (smallest path to a visible win)
 
