@@ -37,6 +37,11 @@ spec:
                 maxLength: 64
                 pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
                 description: Proxmox storage ID for the VM system and data disks (default from the node's EnvironmentConfig entry). Must exist on the target node.
+              cloudInitStorage:
+                type: string
+                maxLength: 64
+                pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+                description: Proxmox storage ID for the cloud-init drive (default from the node's EnvironmentConfig cloudInitStorage, else the clone's storage). Use a shared storage (e.g. cloud-init-shared) so the VM can migrate between nodes; local-lvm pins it to its node. Must exist on the target node and allow disk images.
               cloneType:
                 type: string
                 enum: [linked, full]
